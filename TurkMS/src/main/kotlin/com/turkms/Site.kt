@@ -46,6 +46,9 @@ abstract class SiteSource {
 
     open suspend fun search(query: String): List<SiteResult> = emptyList()
 
+    /** Home-page listing used by the per-site providers. */
+    open suspend fun latest(page: Int): List<SiteResult> = emptyList()
+
     open suspend fun details(url: String): SiteDetails? = null
 
     /** Extracts every playable link from a movie or episode page. */

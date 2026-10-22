@@ -27,6 +27,21 @@ class TrDiziIzleSource : SiteSource() {
 
     override suspend fun search(query: String): List<SiteResult> {
         val document = fetchDocument("$mainUrl/?s=${encode(query)}") ?: return emptyList()
+        return parseCards(document)
+    }
+
+    override suspend fun latest(page: Int): List<SiteResult> {
+        if (page > 1) return emptyList()
+        // Same WordPress theme as canlidizi14; fall back to the home page if the
+        // series section is not available.
+        val series = fetchDocument("$mainUrl/kategori/e/")
+        val fromSeries = series?.let { parseCards(it) }.orEmpty()
+        if (fromSeries.isNotEmpty()) return fromSeries
+        val home = fetchDocument("$mainUrl/") ?: return emptyList()
+        return parseCards(home)
+    }
+
+    private fun parseCards(document: org.jsoup.nodes.Document): List<SiteResult> {
         val results = mutableListOf<SiteResult>()
         for (item in document.select("div.single-item")) {
             val link = item.selectFirst("div.categorytitle a, div.cat-title a") ?: continue

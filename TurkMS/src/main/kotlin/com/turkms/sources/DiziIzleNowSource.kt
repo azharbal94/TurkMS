@@ -26,8 +26,18 @@ class DiziIzleNowSource : SiteSource() {
 
     override suspend fun search(query: String): List<SiteResult> {
         val document = fetchDocument("$mainUrl/?ara=${encode(query)}") ?: return emptyList()
+        return parseCards(document)
+    }
+
+    override suspend fun latest(page: Int): List<SiteResult> {
+        if (page > 1) return emptyList()
+        val document = fetchDocument("$mainUrl/diziler/") ?: return emptyList()
+        return parseCards(document)
+    }
+
+    private fun parseCards(document: org.jsoup.nodes.Document): List<SiteResult> {
         val results = mutableListOf<SiteResult>()
-        for (item in document.select("ul.liste li.film")) {
+        for (item in document.select("ul.liste li.film, li.film")) {
             val link = item.selectFirst("div.ad a[href], div.resim a[href]") ?: continue
             val href = absoluteUrl(mainUrl, link.attr("href"))
             if (href.isBlank()) continue

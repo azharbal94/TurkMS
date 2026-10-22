@@ -23,6 +23,10 @@ playback links from third-party sites, and hands them to the player.
   moved to the top. Streams without a label are shown as `Unknown` instead of
   a fake resolution.
 - **Toggleable sources**: disable any site from settings if it breaks.
+- **Separate providers**: besides the `TurkMS` aggregator, each site is
+  registered as its own provider with a **Latest** catalog
+  (`CanlıDizi14`, `Ddizi`, `Diziizle`, `Trdiziizle`), plus a `YouTube`
+  provider that browses TMDB movies and plays them from YouTube.
 
 ## Sources
 
@@ -184,6 +188,9 @@ git push -f origin builds
 
 - **Repository URL returns 404**: the repo is private, the `builds` branch does
   not exist yet, or the workflow failed. Check the **Actions** tab.
+- **A site provider is missing**: update TurkMS from the extension list and
+  restart CloudStream. Providers are grouped by content language, so the site
+  providers appear under Turkish.
 - **No streams for a series**: the site may be down, geo-blocked, or changed
   its markup. Disable that source and try another.
 - **No streams for a movie**: YouTube extraction failed for that video. Try

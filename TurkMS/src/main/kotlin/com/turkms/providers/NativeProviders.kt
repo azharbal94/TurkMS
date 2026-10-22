@@ -1,10 +1,14 @@
 package com.turkms.providers
 
+import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.MainPageData
+import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.turkms.SiteSource
 import com.turkms.sources.CanliDizi14Source
@@ -23,6 +27,17 @@ abstract class BaseSiteProvider(private val site: SiteSource) : MainAPI() {
     }
 
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
+    override val hasMainPage = true
+    override val mainPage = listOf(MainPageData("Latest", "latest"))
+
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
+        if (request.data != "latest") return null
+        // A dead or blocking site must not take the whole home screen down.
+        val items = runCatching { site.latest(page) }
+            .getOrDefault(emptyList())
+            .map { it.toSearchResponse(this) }
+        return newHomePageResponse(request, items)
+    }
 
     override suspend fun search(query: String): List<SearchResponse> {
         return site.search(query).map { it.toSearchResponse(this) }

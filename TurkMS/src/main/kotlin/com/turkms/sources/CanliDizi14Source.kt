@@ -30,6 +30,16 @@ class CanliDizi14Source : SiteSource() {
 
     override suspend fun search(query: String): List<SiteResult> {
         val document = fetchDocument("$mainUrl/?s=${encode(query)}") ?: return emptyList()
+        return parseCards(document)
+    }
+
+    override suspend fun latest(page: Int): List<SiteResult> {
+        if (page > 1) return emptyList()
+        val document = fetchDocument("$mainUrl/kategori/e/") ?: return emptyList()
+        return parseCards(document)
+    }
+
+    private fun parseCards(document: Document): List<SiteResult> {
         val results = mutableListOf<SiteResult>()
         for (item in document.select("div.single-item")) {
             val link = item.selectFirst("div.categorytitle a, div.cat-title a") ?: continue

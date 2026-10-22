@@ -51,6 +51,25 @@ class DdiziSource : SiteSource() {
             .sortedByDescending { if (it.type == TvType.TvSeries) 1 else 0 }
     }
 
+    override suspend fun latest(page: Int): List<SiteResult> {
+        if (page > 1) return emptyList()
+        val document = fetchDocument("$mainUrl/") ?: return emptyList()
+        val results = mutableListOf<SiteResult>()
+        for (link in document.select("a[href*=/diziler/]")) {
+            val href = absoluteUrl(mainUrl, link.attr("href"))
+            if (href.isBlank()) continue
+            val title = (link.attr("title").ifBlank { link.text() })
+                .replace(Regex("(?i)\\s+son\\s+b[oö]l[uü]m\\s+izle.*$"), "")
+                .replace(Regex("(?i)\\s+izle.*$"), "")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+            if (title.isBlank()) continue
+            val poster = link.selectFirst("img")?.firstImage()?.let { absoluteUrl(mainUrl, it) }
+            results.add(SiteResult(title, href, TvType.TvSeries, null, poster))
+        }
+        return results.distinctBy { it.url }.take(40)
+    }
+
     override suspend fun details(url: String): SiteDetails? {
         val document = fetchDocument(url) ?: return null
         val isSeries = url.contains("/diziler/")

@@ -8,6 +8,7 @@ import com.turkms.providers.DdiziProvider
 import com.turkms.providers.DiziIzleNowProvider
 import com.turkms.providers.TrDiziIzleProvider
 import com.turkms.providers.TurkMSProvider
+import com.turkms.providers.YoutubeProvider
 
 @CloudstreamPlugin
 class TurkMSPlugin : Plugin() {
@@ -22,6 +23,7 @@ class TurkMSPlugin : Plugin() {
         registerMainAPI(DdiziProvider())
         registerMainAPI(DiziIzleNowProvider())
         registerMainAPI(TrDiziIzleProvider())
+        registerMainAPI(YoutubeProvider())
 
         openSettings = { ctx -> showSettingsDialog(ctx) }
     }
