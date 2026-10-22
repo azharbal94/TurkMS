@@ -59,12 +59,12 @@ class TurkMSProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     override val mainPage = listOf(
-        MainPageData("Popüler Filmler", "movie_popular"),
-        MainPageData("Vizyondaki Filmler", "movie_now"),
-        MainPageData("Yakında Vizyonda", "movie_upcoming"),
-        MainPageData("Popüler Diziler", "tv_popular"),
-        MainPageData("Yayında Olan Diziler", "tv_airing"),
-        MainPageData("Bu Haftanın Trendleri", "trending"),
+        MainPageData("Popular Movies", "movie_popular"),
+        MainPageData("Now Playing", "movie_now"),
+        MainPageData("Upcoming Movies", "movie_upcoming"),
+        MainPageData("Popular TV Shows", "tv_popular"),
+        MainPageData("Currently Airing", "tv_airing"),
+        MainPageData("Trending This Week", "trending"),
     )
 
     private fun allSources(): List<SiteSource> = listOf(
@@ -243,7 +243,7 @@ class TurkMSProvider : MainAPI() {
                     val number = ep.optInt("episode_number")
                     if (number <= 0) continue
                     val epName = ep.optString("name").takeIf { it.isNotBlank() }
-                        ?: "S${seasonNumber}B$number"
+                        ?: "S${seasonNumber}E$number"
                     val epData = buildAggData(
                         title = title,
                         originalTitle = original,

@@ -1,123 +1,118 @@
 # TurkMS
 
-Türk filmleri ve dizileri için **TMDB v3** destekli, çok kaynaklı bir
-[CloudStream 3](https://github.com/recloudstream/cloudstream) eklentisi.
+A multi-source [CloudStream 3](https://github.com/recloudstream/cloudstream)
+plugin for Turkish movies and TV series, backed by **TMDB v3**.
 
-TurkMS içerik barındırmaz. Film/dizi bilgilerini TMDB'den alır, oynatma
-bağlantılarını üçüncü taraf sitelerden toplar ve oynatıcıya verir.
+TurkMS does not host content. It reads movie/show metadata from TMDB, collects
+playback links from third-party sites, and hands them to the player.
 
-## Özellikler
+## Features
 
-- **Türkçe arayüz**: tüm katalog, arama ve detay metinleri `tr-TR`.
-- **TMDB v3**: popüler filmler, vizyondakiler, yakında vizyonda, popüler
-  diziler, yayındaki diziler ve haftanın trendleri.
-- **Arama**: TMDB üzerinden film/dizi arama; TMDB sonuç vermezse sitelerde
-  arama devreye girer.
-- **Detay sayfaları**: afiş, arka plan, özet, yıl, süre, puan, türler,
-  oyuncular, fragmanlar ve öneriler.
-- **Dizi bölümleri**: TMDB sezon/bölüm listesi; bölüm adı, sezon, bölüm
-  numarası ve görsel bilgisi.
-- **Çoklu kaynak oynatma**: aynı içerik için birden fazla siteden bağlantı
-  toplanır, tekrarlar ayıklanır ve kaliteye göre sıralanır. Diziler dört
-  siteden, filmler YouTube'dan gelir.
-- **1080p önceliği**: ayarlardan seçilen kalite (varsayılan 1080p) listede
-  ilk sıraya alınır. Etiketi olmayan "auto" akışlar sahte bir çözünürlük
-  göstermez, `Unknown` olarak işaretlenir.
-- **Kaynak açma/kapama**: bir site bozulursa ayarlardan kapatılabilir.
+- **English UI**: catalogs, settings, and error states are in English.
+- **TMDB v3**: popular, now-playing, and upcoming movies; popular and
+  currently-airing shows; weekly trending titles.
+- **Search**: TMDB first; if it returns few results, the scraped sites are
+  searched as well.
+- **Detail pages**: poster, backdrop, overview, year, runtime, score, genres,
+  cast, trailers, and recommendations.
+- **Episode lists**: seasons and episodes from TMDB, with names, numbers, and
+  stills.
+- **Multi-source playback**: links from several sites are merged, de-duplicated,
+  and sorted by quality. Series come from four sites; movies come from YouTube.
+- **1080p preference**: the quality chosen in settings (1080p by default) is
+  moved to the top. Streams without a label are shown as `Unknown` instead of
+  a fake resolution.
+- **Toggleable sources**: disable any site from settings if it breaks.
 
-## Kaynaklar
+## Sources
 
-Doğrudan kazınan siteler:
+Directly scraped sites:
 
-| Anahtar | Site | İçerik | Oynatıcı |
+| Key | Site | Content | Player |
 | --- | --- | --- | --- |
-| `canlidizi14` | canlidizi14.net | Dizi | YouTube / hlszone / JW Player |
-| `ddizi` | ddizi.tel | Dizi | JW Player (Ciner MP4/HLS) |
-| `diziizlenow` | diziizle.you | Dizi | YouTube |
-| `trdiziizle` | trdiziizle.tv | Dizi | JW Player / Twitter HLS |
-| `youtube` | youtube.com | Film | CloudStream YouTube çıkarıcısı |
+| `canlidizi14` | canlidizi14.net | TV series | YouTube / hlszone / JW Player |
+| `ddizi` | ddizi.tel | TV series | JW Player (Ciner MP4/HLS) |
+| `diziizlenow` | diziizle.you | TV series | YouTube |
+| `trdiziizle` | trdiziizle.tv | TV series | JW Player / Twitter HLS |
+| `youtube` | youtube.com | Movies | CloudStream YouTube extractor |
 
-Ek olarak her bağlantı, CloudStream'in yerleşik çıkarıcı kütüphanesine
-(`loadExtractor`) verilir. Bu kütüphane YouTube, Vimeo, Dailymotion, Doodstream,
-Filemoon, Streamtape benzeri **onlarca video sunucusunu** tanır. Yani "50+
-sağlayıcı" ifadesi, 50 ayrı site kazımak değil; 5 kaynak + CloudStream'in geniş
-host desteği anlamına gelir. Sayıyı abartmamak için burada açıkça yazıyoruz.
+Every collected link is also passed through CloudStream's built-in extractor
+library (`loadExtractor`), which understands dozens of hosts such as YouTube,
+Vimeo, Dailymotion, Doodstream, Filemoon, and Streamtape. So "50+ providers"
+means 5 scraped sources plus CloudStream's host support — not 50 scraped sites.
 
-### Filmler hakkında
+### About movies
 
-Kazınan dört site **yalnızca dizi** yayınlıyor (canlidizi14'ün "film" bölümü de
-aslında bölümlere ayrılmış dijital dizilerden oluşuyor). Bu yüzden film
-oynatma, isteğinizde geçen **YouTube** kaynağı üzerinden yapılır:
+The four scraped sites only publish **TV series** (canlidizi14's "movies"
+section is made of digital series split into episodes). Movie playback
+therefore uses the **YouTube** source:
 
-1. TMDB'den filmin Türkçe adı alınır.
-2. YouTube'da `"<ad> full film türkçe izle"` araması yapılır.
-3. 20 dakikadan uzun ve başlığı eşleşen videolar seçilir.
-4. `watch?v=...` adresi CloudStream'in YouTube çıkarıcısına verilir.
+1. The movie's Turkish title is read from TMDB.
+2. YouTube is searched for `"<title> full film türkçe izle"`.
+3. Videos longer than 20 minutes with a matching title are selected.
+4. The `watch?v=...` URL is passed to CloudStream's YouTube extractor.
 
-YouTube bazı videolarda imza/yaş kısıtı nedeniyle bağlantı vermeyebilir; bu
-durumda film detay sayfası açılır ama oynatma listesi boş kalır. Bu davranış
-sessizce yanlış bir kaynak göstermekten daha dürüsttür.
+YouTube may refuse some videos due to signature or age restrictions; in that
+case the movie page still opens but the playback list stays empty. That is
+more honest than silently returning a wrong stream.
 
-## Kurulum
+## Installation
 
-### Depo olarak ekleme (önerilen)
+### As a repository (recommended)
 
-1. Projeyi GitHub'a push edin (varsayılan dal: `main`).
-2. Actions çalıştıktan sonra `builds` dalı otomatik oluşur ve şunları içerir:
-   - `TurkMS.cs3`
-   - `plugins.json`
-   - `repo.json`
-3. CloudStream'de **Ayarlar → Eklentiler → Depo Ekle** bölümüne şu adresi girin:
-
-   ```
-   https://raw.githubusercontent.com/<KULLANICI>/<DEPO>/builds/repo.json
-   ```
-
-4. Depoyu yenileyin, **TurkMS** eklentisini yükleyin.
-
-### Tek tıkla kurulum
-
-Depo hazır olduktan sonra aşağıdaki bağlantı CloudStream'i açar:
+Repository URL:
 
 ```
-cloudstreamrepo://raw.githubusercontent.com/<KULLANICI>/<DEPO>/builds/repo.json
+https://raw.githubusercontent.com/azharbal94/TurkMS/builds/repo.json
 ```
 
-`<KULLANICI>` ve `<DEPO>` kısımlarını kendi GitHub bilgilerinizle değiştirin.
-`repo.json` içindeki `pluginLists` adresi CI tarafından `${GITHUB_REPOSITORY}`
-kullanılarak üretildiği için elle düzenleme gerekmez.
+One-click install:
 
-### Manuel kurulum
+```
+cloudstreamrepo://raw.githubusercontent.com/azharbal94/TurkMS/builds/repo.json
+```
 
-`builds` dalındaki `TurkMS.cs3` dosyasını indirip CloudStream'de
-**Ayarlar → Eklentiler → Yerel eklenti yükle** ile açabilirsiniz.
+In CloudStream: **Settings → Extensions → Add repository**, paste the URL,
+refresh, then install **TurkMS**.
 
-## Ayarlar
+The `builds` branch is generated by GitHub Actions and contains `TurkMS.cs3`,
+`plugins.json`, and `repo.json`.
 
-Eklenti ayarları CloudStream içinden açılır (**Eklentiler → TurkMS → Ayarlar**):
+> The repository must be **public**. Raw URLs from a private repository return
+> 404 for everyone except you.
 
-- **TMDB API anahtarı (v3)**: boş bırakılırsa yerleşik demo anahtar kullanılır.
-  Kendi anahtarınızı almak için: <https://www.themoviedb.org/settings/api>
-- **Kaynaklar**: dört dizi sitesini ve YouTube film aramasını tek tek açıp kapatma.
-- **Tercih edilen kalite**: 1080p (varsayılan), 720p veya 4K.
-- **İstek zaman aşımı**: varsayılan 20 saniye.
+### Manual installation
 
-Ayarlar `turkms` adlı `SharedPreferences` dosyasında saklanır.
+Download `TurkMS.cs3` from the `builds` branch and open it with
+**Settings → Extensions → Install local extension**.
 
-## Derleme
+## Settings
 
-Gereksinimler: JDK 17, Android SDK (platform 35, build-tools 35.0.0).
+Open **Extensions → TurkMS → Settings**:
+
+- **TMDB API key (v3)**: leave empty to use the built-in demo key. Get a
+  personal key at <https://www.themoviedb.org/settings/api>.
+- **Sources**: toggle each of the four series sites and the YouTube movie
+  search.
+- **Preferred quality**: 1080p (default), 720p, or 4K.
+- **Request timeout**: 20 seconds by default.
+
+Settings are stored in the `turkms` `SharedPreferences` file.
+
+## Build
+
+Requirements: JDK 17, Android SDK (platform 35, build-tools 35.0.0).
 
 ```bash
 ./gradlew make makePluginsJson
 ```
 
-Çıktılar:
+Outputs:
 
 - `TurkMS/build/TurkMS.cs3`
 - `build/plugins.json`
 
-Windows'ta:
+On Windows:
 
 ```powershell
 $env:JAVA_HOME="C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot"
@@ -125,58 +120,52 @@ $env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
 .\gradlew.bat make makePluginsJson
 ```
 
-> Not: `com.lagradost:cloudstream3:pre-release` artefaktı Kotlin metadata 2.4.0
-> ile derlendiği için proje Kotlin **2.4.0** kullanır. Resmî şablon hâlâ 2.1.0
-> kullandığından eski Kotlin sürümüyle derleme
-> `binary version of its metadata is 2.4.0` hatası verir.
+> Note: `com.lagradost:cloudstream3:pre-release` is compiled with Kotlin
+> metadata 2.4.0, so this project uses Kotlin **2.4.0**. The official template
+> still uses 2.1.0, which fails with
+> `binary version of its metadata is 2.4.0`.
 
-## Yayınlama (GitHub)
+## Publishing
 
-Bu bölüm, eklentiyi herkesin kurabileceği bir depo hâline getirmek içindir.
-Tek seferlik kurulum:
+The workflow builds on every push to `main` and force-pushes the artifacts to
+the `builds` branch.
 
-1. GitHub'da **public** bir depo oluşturun (örnek ad: `TurkMS`).
-2. Yerel depoyu bağlayıp gönderin:
+1. Create a **public** GitHub repository.
+2. Push the project:
 
    ```bash
-   git remote add origin https://github.com/<KULLANICI>/TurkMS.git
+   git remote add origin https://github.com/<USER>/TurkMS.git
    git push -u origin main
    ```
 
-3. Depoda **Settings → Actions → General → Workflow permissions** yolunu
-   izleyip **Read and write permissions** seçeneğini işaretleyin. Bu izin
-   olmadan CI `builds` dalına yazamaz.
-4. **Actions** sekmesinde `Build` iş akışının bitmesini bekleyin. İlk çalışma
-   birkaç dakika sürer.
-5. `builds` dalında şu üç dosya oluşur: `TurkMS.cs3`, `plugins.json`,
-   `repo.json`.
+3. Go to **Settings → Actions → General → Workflow permissions** and select
+   **Read and write permissions**. Without this the workflow cannot push
+   `builds`.
+4. Wait for the `Build` workflow under the **Actions** tab.
+5. Verify that `builds` contains `TurkMS.cs3`, `plugins.json`, and `repo.json`.
 
-Bundan sonra `main` dalına yapılan her push otomatik olarak yeniden yayınlanır.
-Sadece `*.md` ve `LICENSE` değişiklikleri derlemeyi tetiklemez; gerekirse
-**Actions → Build → Run workflow** ile elle çalıştırın.
+Only `*.md` and `LICENSE` changes skip the build; run
+**Actions → Build → Run workflow** manually if needed.
 
-### Paylaşılacak adresler
+### URLs to share
 
-Depo adresi (CloudStream → Depo Ekle):
+Repository:
 
 ```
-https://raw.githubusercontent.com/<KULLANICI>/TurkMS/builds/repo.json
+https://raw.githubusercontent.com/<USER>/TurkMS/builds/repo.json
 ```
 
-Tek tıkla kurulum bağlantısı:
+One-click:
 
 ```
-cloudstreamrepo://raw.githubusercontent.com/<KULLANICI>/TurkMS/builds/repo.json
+cloudstreamrepo://raw.githubusercontent.com/<USER>/TurkMS/builds/repo.json
 ```
 
-CNCVerse Bridge de aynı `repo.json` adresini kabul eder. `plugins.json`
-içindeki `repositoryUrl`, `.cs3` indirme adresi ve dosya özeti CI tarafından
-otomatik hesaplanır; elle güncelleme gerekmez.
+CNCVerse Bridge accepts the same `repo.json`. `plugins.json` already contains
+the `.cs3` download URL, file size, and hash, so users get updates
+automatically.
 
-### Actions olmadan yayınlama
-
-GitHub Actions kullanılamıyorsa aynı çıktılar yerelde üretilip `builds`
-dalına itilebilir:
+### Publishing without Actions
 
 ```bash
 ./gradlew make makePluginsJson
@@ -185,34 +174,46 @@ git checkout --orphan builds
 git rm -rf .
 cp TurkMS/build/TurkMS.cs3 .
 cp build/plugins.json .
-# repo.json: yukarıdaki örnek içerik, pluginLists alanı kendi depo adresiniz
+# repo.json: same structure as above, pluginLists pointing at your repo
 git add -A
 git commit -m "Manual build"
 git push -f origin builds
 ```
 
-## Proje yapısı
+## Troubleshooting
+
+- **Repository URL returns 404**: the repo is private, the `builds` branch does
+  not exist yet, or the workflow failed. Check the **Actions** tab.
+- **No streams for a series**: the site may be down, geo-blocked, or changed
+  its markup. Disable that source and try another.
+- **No streams for a movie**: YouTube extraction failed for that video. Try
+  again later; the plugin never substitutes a wrong link.
+- **TMDB errors**: the demo key is rate-limited. Add a personal key in
+  settings.
+- **`trdiziizle.tv` returns 403**: the site blocks some networks/regions. It is
+  not a plugin bug; the source fails gracefully.
+
+## Project layout
 
 ```
 TurkMS/
-├── build.gradle.kts              # Kök Gradle yapılandırması
+├── build.gradle.kts              # Root Gradle configuration
 ├── TurkMS/
-│   ├── build.gradle.kts          # Eklenti meta verisi
+│   ├── build.gradle.kts          # Plugin metadata
 │   └── src/main/kotlin/com/turkms/
-│       ├── TurkMSPlugin.kt       # Giriş noktası, sağlayıcı kaydı
-│       ├── providers/            # TurkMS + 4 site sağlayıcısı
-│       ├── sources/              # Site kazıyıcıları
-│       ├── Tmdb.kt               # TMDB v3 istemcisi
-│       ├── Mapping.kt            # Site modelleri → CloudStream modelleri
-│       ├── Site.kt               # Kaynak soyutlaması + link yardımcıları
-│       ├── Http.kt               # HTTP/HTML/başlık yardımcıları
-│       └── Settings*.kt          # Tercihler ve ayar arayüzü
-└── .github/workflows/build.yml   # .cs3 + plugins.json + repo.json üretimi
+│       ├── TurkMSPlugin.kt       # Entry point, provider registration
+│       ├── providers/            # TurkMS + 4 site providers
+│       ├── sources/              # Site scrapers
+│       ├── Tmdb.kt               # TMDB v3 client
+│       ├── Mapping.kt            # Site models → CloudStream models
+│       ├── Site.kt               # Source abstraction + link helpers
+│       ├── Http.kt               # HTTP/HTML/header helpers
+│       └── Settings*.kt          # Preferences and settings UI
+└── .github/workflows/build.yml   # .cs3 + plugins.json + repo.json
 ```
 
-## Yasal uyarı
+## Legal notice
 
-Bu eklenti hiçbir video dosyası barındırmaz veya dağıtmaz. Tüm bağlantılar
-üçüncü taraf sitelere aittir. Kullanım sorumluluğu kullanıcıya aittir; lütfen
-içerik sağlayıcıların kullanım koşullarına ve bulunduğunuz ülkenin yasalarına
-uyun.
+This plugin does not host or distribute any video files. All links belong to
+third-party sites. Usage is at your own risk; follow the terms of service of
+each content provider and the laws of your country.

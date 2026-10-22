@@ -92,7 +92,7 @@ class YoutubeMovieSource : SiteSource() {
             url = url,
             type = TvType.Movie,
             poster = "https://i.ytimg.com/vi/$id/hqdefault.jpg",
-            plot = "YouTube üzerinde yayınlanan tam uzunlukta film.",
+            plot = "Full-length movie published on YouTube.",
         )
     }
 

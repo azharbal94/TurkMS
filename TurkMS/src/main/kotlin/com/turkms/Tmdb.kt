@@ -21,7 +21,7 @@ object TmdbClient {
     suspend fun request(path: String, params: Map<String, String> = emptyMap()): JSONObject? {
         val all = params + mapOf(
             "api_key" to TurkMSSettings.effectiveTmdbKey(),
-            "language" to "tr-TR",
+            "language" to "en-US",
             "include_adult" to "false",
         )
         return runCatching {

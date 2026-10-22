@@ -23,8 +23,8 @@ fun showSettingsDialog(context: Context) {
     }
 
     val info = TextView(context).apply {
-        text = "TMDB v3 anahtarınızı girin. Boş bırakırsanız yerleşik demo anahtar kullanılır. " +
-            "Kişisel anahtar önerilir: themoviedb.org/settings/api"
+        text = "Enter your TMDB v3 API key. Leave it empty to use the built-in demo key. " +
+            "A personal key is recommended: themoviedb.org/settings/api"
         textSize = 12f
         setTextColor(Color.GRAY)
         setPadding(0, 0, 0, context.dp(12))
@@ -32,7 +32,7 @@ fun showSettingsDialog(context: Context) {
     layout.addView(info)
 
     val keyInput = EditText(context).apply {
-        hint = "TMDB API Anahtarı (v3)"
+        hint = "TMDB API Key (v3)"
         setSingleLine()
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         setText(TurkMSSettings.tmdbApiKey)
@@ -40,7 +40,7 @@ fun showSettingsDialog(context: Context) {
     layout.addView(keyInput)
 
     val sourcesTitle = TextView(context).apply {
-        text = "Kaynaklar"
+        text = "Sources"
         textSize = 15f
         setPadding(0, context.dp(16), 0, context.dp(4))
     }
@@ -63,7 +63,7 @@ fun showSettingsDialog(context: Context) {
         isChecked = TurkMSSettings.sourceTrDiziIzle
     }
     val youtube = CheckBox(context).apply {
-        text = "YouTube (film araması)"
+        text = "YouTube (movie search)"
         isChecked = TurkMSSettings.sourceYoutube
     }
     layout.addView(canli)
@@ -73,14 +73,14 @@ fun showSettingsDialog(context: Context) {
     layout.addView(youtube)
 
     val qualityTitle = TextView(context).apply {
-        text = "Tercih edilen kalite"
+        text = "Preferred quality"
         textSize = 15f
         setPadding(0, context.dp(16), 0, context.dp(4))
     }
     layout.addView(qualityTitle)
 
     val qualities = listOf(1080, 720, 2160)
-    val qualityLabels = listOf("1080p (önerilen)", "720p", "4K / 2160p")
+    val qualityLabels = listOf("1080p (recommended)", "720p", "4K / 2160p")
     val spinner = Spinner(context).apply {
         adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, qualityLabels)
         setSelection(qualities.indexOf(TurkMSSettings.preferredQuality).coerceAtLeast(0))
@@ -92,8 +92,8 @@ fun showSettingsDialog(context: Context) {
     layout.addView(spinner)
 
     val note = TextView(context).apply {
-        text = "Not: TurkMS içerik barındırmaz. Tüm videolar üçüncü taraf sitelerden alınır. " +
-            "Bir kaynak açılmıyorsa ayarlardan kapatabilirsiniz."
+        text = "Note: TurkMS does not host any content. All videos are fetched from third-party sites. " +
+            "If a source stops working, disable it in the settings."
         textSize = 11f
         setTextColor(Color.GRAY)
         setPadding(0, context.dp(14), 0, 0)
@@ -103,10 +103,10 @@ fun showSettingsDialog(context: Context) {
     val scroll = ScrollView(context).apply { addView(layout) }
 
     val dialog = AlertDialog.Builder(context)
-        .setTitle("TurkMS Ayarları")
+        .setTitle("TurkMS Settings")
         .setView(scroll)
-        .setPositiveButton("Kaydet", null)
-        .setNegativeButton("İptal", null)
+        .setPositiveButton("Save", null)
+        .setNegativeButton("Cancel", null)
         .create()
 
     dialog.setOnShowListener {
@@ -123,7 +123,7 @@ fun showSettingsDialog(context: Context) {
                 quality = quality,
                 timeout = TurkMSSettings.requestTimeout,
             )
-            Toast.makeText(context, "TurkMS ayarları kaydedildi", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "TurkMS settings saved", Toast.LENGTH_SHORT).show()
             dialog.dismiss()
         }
     }
