@@ -9,8 +9,9 @@ playback links from third-party sites, and hands them to the player.
 ## Features
 
 - **English UI**: catalogs, settings, and error states are in English.
-- **TMDB v3**: popular, now-playing, and upcoming movies; popular and
-  currently-airing shows; weekly trending titles.
+- **Turkish TMDB catalogs**: Turkish movies and Turkish series
+  (`with_original_language=tr`), new Turkish movies, top-rated Turkish series,
+  now playing in Turkey, and weekly trending titles.
 - **Search**: TMDB first; if it returns few results, the scraped sites are
   searched as well.
 - **Detail pages**: poster, backdrop, overview, year, runtime, score, genres,
@@ -22,6 +23,9 @@ playback links from third-party sites, and hands them to the player.
 - **1080p preference**: the quality chosen in settings (1080p by default) is
   moved to the top. Streams without a label are shown as `Unknown` instead of
   a fake resolution.
+- **Arabic subtitles (optional)**: matched by IMDb id (movie, or exact season
+  and episode), downloaded as UTF-8 SRT, and offered in the player's subtitle
+  menu. Enable or disable them in settings.
 - **Toggleable sources**: disable any site from settings if it breaks.
 - **Separate providers**: besides the `TurkMS` aggregator, each site is
   registered as its own provider with a **Latest** catalog
@@ -98,6 +102,8 @@ Open **Extensions → TurkMS → Settings**:
   personal key at <https://www.themoviedb.org/settings/api>.
 - **Sources**: toggle each of the four series sites and the YouTube movie
   search.
+- **Arabic subtitles (optional)**: on by default. Turn it off to skip the
+  subtitle lookup entirely.
 - **Preferred quality**: 1080p (default), 720p, or 4K.
 - **Request timeout**: 20 seconds by default.
 
@@ -195,6 +201,10 @@ git push -f origin builds
   its markup. Disable that source and try another.
 - **No streams for a movie**: YouTube extraction failed for that video. Try
   again later; the plugin never substitutes a wrong link.
+- **No Arabic subtitles for a title**: subtitles are matched by IMDb id, so a
+  title that TMDB cannot map to IMDb (or an OpenSubtitles entry that does not
+  exist yet) has no Arabic option. The video itself still plays; other
+  subtitle languages are not added by this plugin.
 - **TMDB errors**: the demo key is rate-limited. Add a personal key in
   settings.
 - **`trdiziizle.tv` returns 403**: the site blocks some networks/regions. It is
@@ -212,6 +222,7 @@ TurkMS/
 │       ├── providers/            # TurkMS + 4 site providers
 │       ├── sources/              # Site scrapers
 │       ├── Tmdb.kt               # TMDB v3 client
+│       ├── Subtitles.kt          # Optional Arabic subtitles (IMDb-matched)
 │       ├── Mapping.kt            # Site models → CloudStream models
 │       ├── Site.kt               # Source abstraction + link helpers
 │       ├── Http.kt               # HTTP/HTML/header helpers

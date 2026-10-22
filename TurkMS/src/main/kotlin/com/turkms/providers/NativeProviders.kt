@@ -10,7 +10,10 @@ import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.turkms.ArabicSubtitles
 import com.turkms.SiteSource
+import com.turkms.TmdbClient
+import com.turkms.TurkMSSettings
 import com.turkms.sources.CanliDizi14Source
 import com.turkms.sources.DdiziSource
 import com.turkms.sources.DiziIzleNowSource
@@ -18,6 +21,7 @@ import com.turkms.sources.TrDiziIzleSource
 import com.turkms.sortForPreferredQuality
 import com.turkms.toLoadResponse
 import com.turkms.toSearchResponse
+import kotlinx.coroutines.withTimeoutOrNull
 
 abstract class BaseSiteProvider(private val site: SiteSource) : MainAPI() {
     init {
@@ -56,7 +60,34 @@ abstract class BaseSiteProvider(private val site: SiteSource) : MainAPI() {
         val links = mutableListOf<ExtractorLink>()
         site.loadLinks(data) { links.add(it) }
         for (link in links.sortForPreferredQuality()) callback(link)
+        addArabicSubtitles(data, subtitleCallback)
         return links.isNotEmpty()
+    }
+
+    private suspend fun addArabicSubtitles(
+        url: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+    ) {
+        if (!TurkMSSettings.arabicSubtitles) return
+        runCatching {
+            val details = withTimeoutOrNull(10_000) { site.details(url) } ?: return
+            val isTv = details.type == TvType.TvSeries
+            val episode = details.episodes.firstOrNull { it.url == url }
+            val imdb = withTimeoutOrNull(10_000) {
+                TmdbClient.resolveImdb(
+                    title = details.name,
+                    originalTitle = null,
+                    year = details.year,
+                    isTv = isTv,
+                )
+            }
+            ArabicSubtitles.find(
+                imdbId = imdb,
+                isTv = isTv,
+                season = episode?.season,
+                episode = episode?.episode,
+            ).forEach(subtitleCallback)
+        }
     }
 }
 

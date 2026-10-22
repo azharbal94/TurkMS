@@ -19,6 +19,7 @@ import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.SubtitleFile
 import com.turkms.AggRequest
+import com.turkms.ArabicSubtitles
 import com.turkms.SiteResult
 import com.turkms.SiteSource
 import com.turkms.TmdbClient
@@ -59,13 +60,16 @@ class TurkMSProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     override val mainPage = listOf(
-        MainPageData("Popular Movies", "movie_popular"),
-        MainPageData("Now Playing", "movie_now"),
-        MainPageData("Upcoming Movies", "movie_upcoming"),
-        MainPageData("Popular TV Shows", "tv_popular"),
-        MainPageData("Currently Airing", "tv_airing"),
+        MainPageData("Turkish Movies", "tr_movies"),
+        MainPageData("Turkish Series", "tr_series"),
+        MainPageData("New Turkish Movies", "tr_movies_new"),
+        MainPageData("Top Rated Turkish Series", "tr_series_top"),
+        MainPageData("Now Playing in Turkey", "movie_now"),
         MainPageData("Trending This Week", "trending"),
     )
+
+    private fun today(): String =
+        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
 
     private fun allSources(): List<SiteSource> = listOf(
         CanliDizi14Source(),
@@ -91,11 +95,52 @@ class TurkMSProvider : MainAPI() {
         // choice and request volume on mobile.
         if (page > MAX_TMDB_PAGES) return null
         val items: List<TmdbItem> = when (request.data) {
-            "movie_popular" -> TmdbClient.list("/movie/popular", mapOf("page" to "$page"))
-            "movie_now" -> TmdbClient.list("/movie/now_playing", mapOf("page" to "$page", "region" to "TR"))
-            "movie_upcoming" -> TmdbClient.list("/movie/upcoming", mapOf("page" to "$page", "region" to "TR"))
-            "tv_popular" -> TmdbClient.list("/tv/popular", mapOf("page" to "$page"))
-            "tv_airing" -> TmdbClient.list("/tv/on_the_air", mapOf("page" to "$page"))
+            // with_original_language=tr keeps the catalogs Turkish-only, instead of
+            // mixing in whatever happens to be popular worldwide.
+            "tr_movies" -> TmdbClient.list(
+                "/discover/movie",
+                mapOf(
+                    "with_original_language" to "tr",
+                    "sort_by" to "popularity.desc",
+                    "page" to "$page",
+                ),
+            )
+
+            "tr_series" -> TmdbClient.list(
+                "/discover/tv",
+                mapOf(
+                    "with_original_language" to "tr",
+                    "sort_by" to "popularity.desc",
+                    "page" to "$page",
+                ),
+            )
+
+            "tr_movies_new" -> TmdbClient.list(
+                "/discover/movie",
+                mapOf(
+                    "with_original_language" to "tr",
+                    "sort_by" to "primary_release_date.desc",
+                    "vote_count.gte" to "5",
+                    "release_date.lte" to today(),
+                    "page" to "$page",
+                ),
+            )
+
+            "tr_series_top" -> TmdbClient.list(
+                "/discover/tv",
+                mapOf(
+                    "with_original_language" to "tr",
+                    "sort_by" to "vote_average.desc",
+                    "vote_count.gte" to "100",
+                    "page" to "$page",
+                ),
+            )
+
+            "movie_now" -> TmdbClient.list(
+                "/movie/now_playing",
+                mapOf("page" to "$page", "region" to "TR"),
+            )
+
             "trending" -> TmdbClient.list("/trending/all/week", mapOf("page" to "$page"))
             else -> emptyList()
         }
@@ -181,7 +226,8 @@ class TurkMSProvider : MainAPI() {
         if (title.isBlank()) return null
         val original = json.optString("original_title").takeIf { it.isNotBlank() && it != title }
         val year = parseYear(json.optString("release_date"))
-        val data = buildAggData(title, original, year, null, null)
+        val imdb = TmdbClient.imdbId(json)
+        val data = buildAggData(title, original, year, null, null, imdbId = imdb)
         val scoreValue = json.optDouble("vote_average").takeUnless { it.isNaN() || it == 0.0 }
 
         return newMovieLoadResponse(title, "turkms://movie/$id", TvType.Movie, dataUrl = data) {
@@ -207,6 +253,7 @@ class TurkMSProvider : MainAPI() {
         val year = parseYear(json.optString("first_air_date"))
         val scoreValue = json.optDouble("vote_average").takeUnless { it.isNaN() || it == 0.0 }
         val showPoster = TmdbClient.poster(json.optString("poster_path"))
+        val imdb = TmdbClient.imdbId(json)
 
         val seasons = mutableListOf<Int>()
         val episodeCounts = mutableMapOf<Int, Int>()
@@ -251,6 +298,7 @@ class TurkMSProvider : MainAPI() {
                         season = seasonNumber,
                         episode = number,
                         absoluteEpisode = episodesBeforeSeason + number,
+                        imdbId = imdb,
                     )
                     episodes.add(
                         newEpisode(epData, initializer = {
@@ -296,12 +344,55 @@ class TurkMSProvider : MainAPI() {
                 found = true
                 callback(it)
             }
+
+            if (TurkMSSettings.arabicSubtitles) {
+                runCatching {
+                    val details = withTimeoutOrNull(10_000) { source.details(parts.url) }
+                    if (details != null) {
+                        val isTv = details.type == TvType.TvSeries
+                        val episode = details.episodes.firstOrNull { it.url == parts.url }
+                        val imdb = withTimeoutOrNull(10_000) {
+                            TmdbClient.resolveImdb(
+                                title = details.name,
+                                originalTitle = null,
+                                year = details.year,
+                                isTv = isTv,
+                            )
+                        }
+                        ArabicSubtitles.find(
+                            imdbId = imdb,
+                            isTv = isTv,
+                            season = episode?.season,
+                            episode = episode?.episode,
+                        ).forEach { subtitleCallback(it) }
+                    }
+                }
+            }
             return found
         }
 
         val request = parseAggData(data) ?: return false
         val links = collectLinks(request)
         for (link in links) callback(link)
+
+        if (TurkMSSettings.arabicSubtitles) {
+            val imdb = request.imdbId ?: runCatching {
+                withTimeoutOrNull(10_000) {
+                    TmdbClient.resolveImdb(
+                        title = request.title,
+                        originalTitle = request.originalTitle,
+                        year = request.year,
+                        isTv = request.season != null,
+                    )
+                }
+            }.getOrNull()
+            ArabicSubtitles.find(
+                imdbId = imdb,
+                isTv = request.season != null,
+                season = request.season,
+                episode = request.episode,
+            ).forEach { subtitleCallback(it) }
+        }
         return links.isNotEmpty()
     }
 

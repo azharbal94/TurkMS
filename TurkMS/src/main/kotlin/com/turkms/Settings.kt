@@ -17,6 +17,7 @@ object TurkMSSettings {
     private const val KEY_YT = "source_youtube"
     private const val KEY_QUALITY = "preferred_quality"
     private const val KEY_TIMEOUT = "request_timeout"
+    private const val KEY_ARABIC_SUBS = "arabic_subtitles"
 
     /** Public demo key. A personal TMDB v3 key can be entered in the plugin settings. */
     const val FALLBACK_TMDB_KEY = "4e44d9029b1270a757cddc766a1bcb63"
@@ -29,6 +30,7 @@ object TurkMSSettings {
     var sourceYoutube: Boolean = true
     var preferredQuality: Int = 1080
     var requestTimeout: Long = 20L
+    var arabicSubtitles: Boolean = true
 
     private var prefs: SharedPreferences? = null
 
@@ -43,6 +45,7 @@ object TurkMSSettings {
         sourceYoutube = p.getBoolean(KEY_YT, true)
         preferredQuality = p.getInt(KEY_QUALITY, 1080)
         requestTimeout = p.getLong(KEY_TIMEOUT, 20L)
+        arabicSubtitles = p.getBoolean(KEY_ARABIC_SUBS, true)
     }
 
     fun save(
@@ -55,6 +58,7 @@ object TurkMSSettings {
         youtube: Boolean,
         quality: Int,
         timeout: Long,
+        subtitles: Boolean,
     ) {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         p.edit()
@@ -66,6 +70,7 @@ object TurkMSSettings {
             .putBoolean(KEY_YT, youtube)
             .putInt(KEY_QUALITY, quality)
             .putLong(KEY_TIMEOUT, timeout)
+            .putBoolean(KEY_ARABIC_SUBS, subtitles)
             .apply()
         prefs = p
         tmdbApiKey = tmdbKey.trim()
@@ -76,6 +81,7 @@ object TurkMSSettings {
         sourceYoutube = youtube
         preferredQuality = quality
         requestTimeout = timeout
+        arabicSubtitles = subtitles
     }
 
     fun effectiveTmdbKey(): String = tmdbApiKey.ifBlank { FALLBACK_TMDB_KEY }

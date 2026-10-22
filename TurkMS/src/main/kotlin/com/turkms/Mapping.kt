@@ -103,6 +103,8 @@ data class AggRequest(
     val episode: Int?,
     /** Episode number across the whole show, used by continuously numbered sites. */
     val absoluteEpisode: Int? = null,
+    /** IMDb id used to attach matching Arabic subtitles. */
+    val imdbId: String? = null,
 )
 
 fun buildAggData(
@@ -112,6 +114,7 @@ fun buildAggData(
     season: Int?,
     episode: Int?,
     absoluteEpisode: Int? = null,
+    imdbId: String? = null,
 ): String {
     val kind = if (season != null && episode != null) "episode" else "movie"
     return "turkms://agg?kind=$kind" +
@@ -120,7 +123,8 @@ fun buildAggData(
         "&year=${year ?: 0}" +
         "&season=${season ?: 0}" +
         "&episode=${episode ?: 0}" +
-        "&abs=${absoluteEpisode ?: 0}"
+        "&abs=${absoluteEpisode ?: 0}" +
+        "&imdb=${encode(imdbId ?: "")}"
 }
 
 fun parseAggData(data: String): AggRequest? {
@@ -134,5 +138,6 @@ fun parseAggData(data: String): AggRequest? {
         season = params["season"]?.toIntOrNull()?.takeIf { it > 0 },
         episode = params["episode"]?.toIntOrNull()?.takeIf { it > 0 },
         absoluteEpisode = params["abs"]?.toIntOrNull()?.takeIf { it > 0 },
+        imdbId = params["imdb"]?.takeIf { it.isNotBlank() },
     )
 }

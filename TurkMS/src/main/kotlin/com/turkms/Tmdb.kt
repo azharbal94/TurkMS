@@ -152,4 +152,30 @@ object TmdbClient {
 
     fun imdbId(details: JSONObject): String? =
         details.optJSONObject("external_ids")?.optString("imdb_id")?.takeIf { it.isNotBlank() }
+
+    /**
+     * Finds the IMDb id for a site-scraped title. Site pages have no IMDb data,
+     * so TMDB search is used as the bridge before looking up external ids.
+     */
+    suspend fun resolveImdb(
+        title: String,
+        originalTitle: String? = null,
+        year: Int? = null,
+        isTv: Boolean,
+    ): String? {
+        val queries = listOfNotNull(title, originalTitle)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+        for (query in queries) {
+            val hits = searchMulti(query).filter { it.isTv == isTv }
+            val best = hits.maxByOrNull { item ->
+                titleScore(item.title, query) + if (year != null && item.year == year) 25 else 0
+            } ?: continue
+            if (titleScore(best.title, query) < 50) continue
+            val details = (if (isTv) tv(best.id) else movie(best.id)) ?: continue
+            imdbId(details)?.let { return it }
+        }
+        return null
+    }
 }

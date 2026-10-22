@@ -72,6 +72,12 @@ fun showSettingsDialog(context: Context) {
     layout.addView(tr)
     layout.addView(youtube)
 
+    val subtitles = CheckBox(context).apply {
+        text = "Arabic subtitles (optional)"
+        isChecked = TurkMSSettings.arabicSubtitles
+    }
+    layout.addView(subtitles)
+
     val qualityTitle = TextView(context).apply {
         text = "Preferred quality"
         textSize = 15f
@@ -122,6 +128,7 @@ fun showSettingsDialog(context: Context) {
                 youtube = youtube.isChecked,
                 quality = quality,
                 timeout = TurkMSSettings.requestTimeout,
+                subtitles = subtitles.isChecked,
             )
             Toast.makeText(context, "TurkMS settings saved", Toast.LENGTH_SHORT).show()
             dialog.dismiss()
