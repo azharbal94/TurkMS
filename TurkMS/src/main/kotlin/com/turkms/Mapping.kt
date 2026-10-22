@@ -101,6 +101,8 @@ data class AggRequest(
     val year: Int?,
     val season: Int?,
     val episode: Int?,
+    /** Episode number across the whole show, used by continuously numbered sites. */
+    val absoluteEpisode: Int? = null,
 )
 
 fun buildAggData(
@@ -109,6 +111,7 @@ fun buildAggData(
     year: Int?,
     season: Int?,
     episode: Int?,
+    absoluteEpisode: Int? = null,
 ): String {
     val kind = if (season != null && episode != null) "episode" else "movie"
     return "turkms://agg?kind=$kind" +
@@ -116,7 +119,8 @@ fun buildAggData(
         "&original=${encode(originalTitle ?: "")}" +
         "&year=${year ?: 0}" +
         "&season=${season ?: 0}" +
-        "&episode=${episode ?: 0}"
+        "&episode=${episode ?: 0}" +
+        "&abs=${absoluteEpisode ?: 0}"
 }
 
 fun parseAggData(data: String): AggRequest? {
@@ -129,5 +133,6 @@ fun parseAggData(data: String): AggRequest? {
         year = params["year"]?.toIntOrNull()?.takeIf { it > 0 },
         season = params["season"]?.toIntOrNull()?.takeIf { it > 0 },
         episode = params["episode"]?.toIntOrNull()?.takeIf { it > 0 },
+        absoluteEpisode = params["abs"]?.toIntOrNull()?.takeIf { it > 0 },
     )
 }

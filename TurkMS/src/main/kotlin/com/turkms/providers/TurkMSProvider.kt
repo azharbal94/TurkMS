@@ -209,13 +209,17 @@ class TurkMSProvider : MainAPI() {
         val showPoster = TmdbClient.poster(json.optString("poster_path"))
 
         val seasons = mutableListOf<Int>()
+        val episodeCounts = mutableMapOf<Int, Int>()
         val seasonsArray = json.optJSONArray("seasons")
         if (seasonsArray != null) {
             for (i in 0 until seasonsArray.length()) {
                 val season = seasonsArray.optJSONObject(i) ?: continue
                 val number = season.optInt("season_number")
                 val count = season.optInt("episode_count")
-                if (number > 0 && count > 0) seasons.add(number)
+                if (number > 0 && count > 0) {
+                    seasons.add(number)
+                    episodeCounts[number] = count
+                }
             }
         }
 
@@ -228,25 +232,38 @@ class TurkMSProvider : MainAPI() {
         }
 
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
+        // Turkish sites often number episodes continuously across seasons, so we
+        // also keep the running episode number for playback matching.
+        var episodesBeforeSeason = 0
         for ((seasonNumber, seasonJson) in seasonData) {
-            val array = seasonJson?.optJSONArray("episodes") ?: continue
-            for (i in 0 until array.length()) {
-                val ep = array.optJSONObject(i) ?: continue
-                val number = ep.optInt("episode_number")
-                if (number <= 0) continue
-                val epName = ep.optString("name").takeIf { it.isNotBlank() }
-                    ?: "S${seasonNumber}B$number"
-                val epData = buildAggData(title, original, year, seasonNumber, number)
-                episodes.add(
-                    newEpisode(epData, initializer = {
-                        name = epName
-                        season = seasonNumber
-                        episode = number
-                        posterUrl = TmdbClient.poster(ep.optString("still_path")) ?: showPoster
-                        description = ep.optString("overview").takeIf { it.isNotBlank() }
-                    }, fix = false)
-                )
+            val array = seasonJson?.optJSONArray("episodes")
+            if (array != null) {
+                for (i in 0 until array.length()) {
+                    val ep = array.optJSONObject(i) ?: continue
+                    val number = ep.optInt("episode_number")
+                    if (number <= 0) continue
+                    val epName = ep.optString("name").takeIf { it.isNotBlank() }
+                        ?: "S${seasonNumber}B$number"
+                    val epData = buildAggData(
+                        title = title,
+                        originalTitle = original,
+                        year = year,
+                        season = seasonNumber,
+                        episode = number,
+                        absoluteEpisode = episodesBeforeSeason + number,
+                    )
+                    episodes.add(
+                        newEpisode(epData, initializer = {
+                            name = epName
+                            season = seasonNumber
+                            episode = number
+                            posterUrl = TmdbClient.poster(ep.optString("still_path")) ?: showPoster
+                            description = ep.optString("overview").takeIf { it.isNotBlank() }
+                        }, fix = false)
+                    )
+                }
             }
+            episodesBeforeSeason += episodeCounts[seasonNumber] ?: 0
         }
 
         return newTvSeriesLoadResponse(title, "turkms://tv/$id", TvType.TvSeries, episodes) {
@@ -347,11 +364,14 @@ class TurkMSProvider : MainAPI() {
                 if (details.type != TvType.TvSeries || details.episodes.isEmpty()) continue
                 val episode = details.episodes.firstOrNull {
                     it.season == request.season && it.episode == request.episode
-                } ?: details.episodes.firstOrNull {
-                    // Most Turkish sites expose a single season. Only use the
-                    // season-agnostic match for season 1; otherwise S2E5 would
-                    // silently resolve to the site's S1E5.
-                    request.season == 1 && it.episode == request.episode
+                } ?: if (request.season == 1) {
+                    // Sites that only expose one season.
+                    details.episodes.firstOrNull { it.episode == request.episode }
+                } else {
+                    // Sites that number episodes continuously across seasons.
+                    request.absoluteEpisode?.let { absolute ->
+                        details.episodes.firstOrNull { it.episode == absolute }
+                    }
                 } ?: continue
                 val ok = runCatching { source.loadLinks(episode.url) { links.add(it) } }.getOrDefault(false)
                 if (ok && links.isNotEmpty()) break
