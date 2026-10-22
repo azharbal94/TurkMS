@@ -9,11 +9,16 @@ playback links from third-party sites, and hands them to the player.
 ## Features
 
 - **English UI**: catalogs, settings, and error states are in English.
-- **Turkish-only catalogs**: six separate rows on the home page — Turkish
-  Movies, Turkish Series, New Turkish Movies, New Turkish Series, Top Rated
-  Turkish Movies, and Top Rated Turkish Series. All use TMDB
-  `with_original_language=tr`, so English, Korean, Japanese and other
-  productions are not mixed in.
+- **Turkish-only catalogs**: six TMDB rows and a **Ddizi Latest** row on the
+  home page — Turkish Movies, Turkish Series, New Turkish Movies, New Turkish
+  Series, Top Rated Turkish Movies, Top Rated Turkish Series, and Ddizi Latest.
+  The TMDB rows use `with_original_language=tr`, so English, Korean, Japanese
+  and other productions are not mixed in.
+- **More than 20 per row**: each TMDB row opens with **60 titles** (three TMDB
+  pages per app page) and supports load-more up to six app pages. The Ddizi row
+  shows its latest Turkish series (currently about 28 after foreign titles are
+  filtered out). Other native site providers open with 30–90 cards and keep
+  paginating through the site archive.
 - **Search**: TMDB first; if it returns few results, the scraped sites are
   searched as well.
 - **Detail pages**: poster, backdrop, overview, year, runtime, score, genres,
@@ -28,14 +33,18 @@ playback links from third-party sites, and hands them to the player.
   moved to the top. Streams without a label are shown as `Unknown` instead of
   a fake resolution.
 - **Arabic subtitles (optional)**: matched by IMDb id (movie, or exact season
-  and episode), downloaded as UTF-8 SRT/VTT, and offered in the player's
-  subtitle menu. Add a free Wyzie Subs API key in settings for the widest
-  coverage; a keyless OpenSubtitles fallback still works without one.
+  and episode) and offered in the player's subtitle menu. Providers include
+  **SubtitleCat** (keyless, direct SRT), **Wyzie Subs** (free key,
+  `source=all`), the keyless **OpenSubtitles v3 Stremio addon**, plus optional
+  **SubDL** and **SubSource** keys. ZIP/GZIP archives are unpacked and converted
+  to UTF-8 SRT/VTT locally, so a packed subtitle still plays. Every result is
+  filtered by title/year and exact SxxExx before it is shown.
 - **Fast navigation**: site searches, detail pages, and TMDB lookups are cached
   for ten minutes, so switching episodes does not repeat the same requests.
+  Subtitle providers are queried in parallel with a 16-second cap.
 - **Toggleable sources**: disable any site from settings if it breaks.
 - **Separate providers**: besides the `TurkMS` aggregator, each site is
-  registered as its own provider with a **Latest** catalog
+  registered as its own provider with a **Latest & Archive** catalog
   (`CanlıDizi14`, `Ddizi`, `Diziizle`, `Trdiziizle`), plus a `YouTube`
   provider that browses TMDB movies and plays them from YouTube.
 
@@ -50,6 +59,19 @@ Directly scraped sites:
 | `diziizlenow` | diziizle.you | TV series | YouTube |
 | `trdiziizle` | trdiziizle.tv | TV series | JW Player / Twitter HLS |
 | `youtube` | youtube.com | Movies | CloudStream YouTube extractor |
+
+Catalog pagination:
+
+- `canlidizi14` reads `/dizi-arsivi/page/N` (three pages per app page, 30
+  cards).
+- `ddizi` reads `/yeni-eklenenler8`, removes the foreign shows listed on
+  `/yabanci-dizi-izle`, and shows the remaining Turkish series (no pagination).
+- `diziizlenow` reads `/diziler/sayfa-N/` (three pages per app page, 90 cards,
+  38 archive pages).
+- `trdiziizle` tries the shared `/dizi-arsivi/page/N` theme paths and falls back
+  to its series section; some networks receive 403 from the site.
+- TMDB rows fetch three TMDB pages per app page, so a row opens with 60 titles
+  and loads up to 360.
 
 Every collected link is also passed through CloudStream's built-in extractor
 library (`loadExtractor`), which understands dozens of hosts such as YouTube,
@@ -112,10 +134,21 @@ Open **Extensions → TurkMS → Settings**:
 - **Arabic subtitles (optional)**: on by default. Turn it off to skip the
   subtitle lookup entirely.
 - **Wyzie Subs API key**: optional. Get a free key at
-  <https://store.wyzie.io/redeem> (1,000 requests/day, no payment). The key is
-  stored only on the device and adds more Arabic subtitle sources.
+  <https://store.wyzie.io/redeem> (1,000 requests/day, no payment). Searches use
+  `source=all` to aggregate Wyzie's providers. The key is stored only on the
+  device.
+- **SubDL API key**: optional. Get a free key at
+  <https://subdl.com/panel/api>. Enables SubDL Arabic subtitles. SubDL returns
+  ZIP archives for some releases, which the plugin unpacks locally.
+- **SubSource API key**: optional. Copy the API key from your
+  <https://subsource.net> account. Enables SubSource Arabic subtitles. Downloads
+  are ZIP files and are unpacked locally.
 - **Preferred quality**: 1080p (default), 720p, or 4K.
 - **Request timeout**: 20 seconds by default.
+
+**SubtitleCat is keyless** and is always queried. The OpenSubtitles v3 Stremio
+fallback is also keyless. Without any keys, those two sources still provide
+Arabic subtitles for many titles.
 
 Settings are stored in the `turkms` `SharedPreferences` file.
 
@@ -211,10 +244,19 @@ git push -f origin builds
   its markup. Disable that source and try another.
 - **No streams for a movie**: YouTube extraction failed for that video. Try
   again later; the plugin never substitutes a wrong link.
-- **No Arabic subtitles for a title**: subtitles are matched by IMDb id, so a
-  title that TMDB cannot map to IMDb (or an OpenSubtitles/Wyzie entry that does
-  not exist yet) has no Arabic option. Add a free Wyzie key in settings for
-  wider coverage; the video itself still plays without subtitles.
+- **No Arabic subtitles for a title**: subtitles are matched by IMDb id or
+  title, and TV results must have the exact season/episode marker. A title that
+  TMDB cannot map to IMDb, or one that SubtitleCat/OpenSubtitles does not carry
+  yet, may have no Arabic option. Add Wyzie/SubDL/SubSource keys for wider
+  coverage; the video itself still plays without subtitles.
+- **A packed subtitle does not load**: SubDL and SubSource return ZIP files, and
+  some OpenSubtitles entries are GZIP/ASS. The plugin extracts and converts
+  them to UTF-8 and serves them through a short-lived loopback HTTP server. If
+  the device blocks local loopback traffic (rare), only direct SRT/VTT sources
+  will appear.
+- **SubDL/SubSource key rejected**: the APIs return an error for an invalid,
+  expired, or rate-limited key. Check the key in settings and the provider's
+  daily limit. SubtitleCat and the keyless OpenSubtitles fallback keep working.
 - **Wyzie key rejected**: the search API returns 403 for an invalid or paused
   key and 429 when the free daily limit is used up. Check the key or wait for
   the UTC reset. The keyless fallback keeps working.
@@ -235,7 +277,8 @@ TurkMS/
 │       ├── providers/            # TurkMS + 4 site providers
 │       ├── sources/              # Site scrapers
 │       ├── Tmdb.kt               # TMDB v3 client
-│       ├── Subtitles.kt          # Optional Arabic subtitles (IMDb-matched)
+│       ├── Subtitles.kt          # SubtitleCat/Wyzie/SubDL/SubSource + matching
+│       ├── SubtitleResolver.kt   # ZIP/GZIP/ASS → SRT + loopback HTTP proxy
 │       ├── FirePlayer.kt         # FirePlayer stream + alternate-server extractor
 │       ├── Cache.kt              # Short-lived search/detail cache
 │       ├── Mapping.kt            # Site models → CloudStream models

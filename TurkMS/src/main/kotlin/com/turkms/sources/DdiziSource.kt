@@ -54,11 +54,28 @@ class DdiziSource : SiteSource() {
 
     override suspend fun latest(page: Int): List<SiteResult> {
         if (page > 1) return emptyList()
-        val document = fetchDocument("$mainUrl/") ?: return emptyList()
+        // The home page only shows ~22 series. /yeni-eklenenler8 is Ddizi's
+        // larger "newly added" index. It mixes Turkish and foreign shows, so
+        // the foreign list is read first and those titles are excluded.
+        val document = fetchDocument("$mainUrl/yeni-eklenenler8")
+            ?: fetchDocument("$mainUrl/")
+            ?: return emptyList()
+
+        val foreignUrls = fetchDocument("$mainUrl/yabanci-dizi-izle")
+            ?.select("div.dizi-boxpost a[href*=/diziler/]")
+            ?.mapNotNull { link ->
+                absoluteUrl(mainUrl, link.attr("href")).takeIf { it.isNotBlank() }
+            }
+            ?.toSet()
+            .orEmpty()
+
         val results = mutableListOf<SiteResult>()
         for (link in document.select("a[href*=/diziler/]")) {
             val href = absoluteUrl(mainUrl, link.attr("href"))
             if (href.isBlank()) continue
+            if (href in foreignUrls) continue
+            if (href.substringAfterLast('/') in KNOWN_FOREIGN_SLUGS) continue
+
             val title = (link.attr("title").ifBlank { link.text() })
                 .replace(Regex("(?i)\\s+son\\s+b[oö]l[uü]m\\s+izle.*$"), "")
                 .replace(Regex("(?i)\\s+izle.*$"), "")
@@ -68,7 +85,32 @@ class DdiziSource : SiteSource() {
             val poster = link.selectFirst("img")?.firstImage()?.let { absoluteUrl(mainUrl, it) }
             results.add(SiteResult(title, href, TvType.TvSeries, null, poster))
         }
-        return results.distinctBy { it.url }.take(40)
+        return results.distinctBy { it.url }.take(80)
+    }
+
+    private companion object {
+        // Fallback if the foreign-list page is temporarily unavailable. These
+        // are the non-Turkish series currently present on the latest page.
+        val KNOWN_FOREIGN_SLUGS = setOf(
+            "1899",
+            "berlin",
+            "bridgerton-hd",
+            "dark-hd",
+            "elite-hd",
+            "la-casa-de-papel-hd",
+            "narcos-hd",
+            "ozark-hd",
+            "peaky-blinders-hd27",
+            "rise-of-empires-ottoman-hd",
+            "riverdale-hd",
+            "snowpiercer-hd04",
+            "squid-game-hd23",
+            "stranger-things-hd15",
+            "the-100",
+            "the-last-dance-hd",
+            "the-witcher-hd",
+            "wednesday-hd",
+        )
     }
 
     override suspend fun details(url: String): SiteDetails? {

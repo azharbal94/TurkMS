@@ -22,6 +22,9 @@ import com.turkms.parseYear
 import com.turkms.sources.YoutubeMovieSource
 import com.turkms.toLoadResponse
 import com.turkms.toSearchResponse
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -49,7 +52,7 @@ class YoutubeProvider : MainAPI() {
         java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
-        if (page > 1) return null
+        if (page > MAX_APP_PAGES) return null
         val path = when (request.data) {
             "turkish", "turkish_new" -> "/discover/movie"
             else -> return null
@@ -64,14 +67,22 @@ class YoutubeProvider : MainAPI() {
         } else {
             mapOf("with_original_language" to "tr", "sort_by" to "popularity.desc")
         }
-        val items = TmdbClient.list(path, params).map { item ->
+
+        val firstPage = (page - 1) * TMDB_PAGES_PER_APP_PAGE + 1
+        val items = coroutineScope {
+            (firstPage until firstPage + TMDB_PAGES_PER_APP_PAGE).map { tmdbPage ->
+                async {
+                    TmdbClient.list(path, params + ("page" to tmdbPage.toString()))
+                }
+            }.awaitAll().flatten()
+        }.distinctBy { it.id }.map { item ->
             newMovieSearchResponse(item.title, "$MOVIE_PREFIX${item.id}", fix = false) {
                 posterUrl = item.poster
                 year = item.year
                 score = item.score?.let { Score.from10(it) }
             }
         }
-        return newHomePageResponse(request, items)
+        return newHomePageResponse(request, items, hasNext = page < MAX_APP_PAGES)
     }
 
     override suspend fun search(query: String): List<SearchResponse> =
@@ -95,7 +106,7 @@ class YoutubeProvider : MainAPI() {
         val scoreValue = json.optDouble("vote_average").takeUnless { it.isNaN() || it == 0.0 }
         val imdb = TmdbClient.imdbId(json)
         val data = "$PLAY_PREFIX?title=${encode(title)}&original=${encode(original ?: "")}" +
-            "&imdb=${encode(imdb ?: "")}"
+            "&year=${year ?: 0}&imdb=${encode(imdb ?: "")}"
 
         return newMovieLoadResponse(title, "$MOVIE_PREFIX$id", TvType.Movie, dataUrl = data) {
             posterUrl = TmdbClient.poster(json.optString("poster_path"))
@@ -117,10 +128,15 @@ class YoutubeProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit,
     ): Boolean {
         var imdb: String? = null
+        var title: String? = null
+        var original: String? = null
+        var year: Int? = null
+
         val target = if (data.startsWith(PLAY_PREFIX)) {
             val params = parseQuery(data)
-            val title = params["title"] ?: return false
-            val original = params["original"]
+            title = params["title"]?.takeIf { it.isNotBlank() } ?: return false
+            original = params["original"]?.takeIf { it.isNotBlank() }
+            year = params["year"]?.toIntOrNull()?.takeIf { it > 0 }
             imdb = params["imdb"]?.takeIf { it.isNotBlank() }
             listOfNotNull(title, original)
                 .firstNotNullOfOrNull { query -> source.search(query).firstOrNull() }
@@ -128,16 +144,27 @@ class YoutubeProvider : MainAPI() {
         } else {
             data
         }
+
+        if (title.isNullOrBlank()) {
+            title = source.details(target)?.name
+        }
+
         val ok = source.loadLinks(target) { callback(it) }
 
         if (TurkMSSettings.arabicSubtitles) {
             val resolved = imdb ?: runCatching {
                 withTimeoutOrNull(10_000) {
-                    val title = source.details(target)?.name ?: return@withTimeoutOrNull null
-                    TmdbClient.resolveImdb(title, null, null, isTv = false)
+                    val lookupTitle = title ?: return@withTimeoutOrNull null
+                    TmdbClient.resolveImdb(lookupTitle, original, year, isTv = false)
                 }
             }.getOrNull()
-            ArabicSubtitles.find(resolved, isTv = false).forEach { subtitleCallback(it) }
+            ArabicSubtitles.find(
+                imdbId = resolved,
+                title = title,
+                originalTitle = original,
+                year = year,
+                isTv = false,
+            ).forEach { subtitleCallback(it) }
         }
         return ok
     }
@@ -145,5 +172,7 @@ class YoutubeProvider : MainAPI() {
     private companion object {
         const val MOVIE_PREFIX = "turkms://yt/movie/"
         const val PLAY_PREFIX = "turkms://yt/play?"
+        const val TMDB_PAGES_PER_APP_PAGE = 2
+        const val MAX_APP_PAGES = 5
     }
 }

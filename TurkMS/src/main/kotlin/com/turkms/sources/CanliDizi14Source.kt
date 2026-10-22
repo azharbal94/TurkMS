@@ -35,9 +35,20 @@ class CanliDizi14Source : SiteSource() {
     }
 
     override suspend fun latest(page: Int): List<SiteResult> {
-        if (page > 1) return emptyList()
-        val document = fetchDocument("$mainUrl/kategori/e/") ?: return emptyList()
-        return parseCards(document)
+        // The archive has 52 numbered pages with 10 series each. Fetching three
+        // pages per app page gives a 30-item row while keeping load-more intact.
+        val firstPage = (page - 1) * 3 + 1
+        val results = mutableListOf<SiteResult>()
+        for (archivePage in firstPage until firstPage + 3) {
+            val url = if (archivePage == 1) {
+                "$mainUrl/dizi-arsivi/"
+            } else {
+                "$mainUrl/dizi-arsivi/page/$archivePage"
+            }
+            val document = fetchDocument(url) ?: continue
+            results.addAll(parseCards(document))
+        }
+        return results.distinctBy { it.url }
     }
 
     private fun parseCards(document: Document): List<SiteResult> {

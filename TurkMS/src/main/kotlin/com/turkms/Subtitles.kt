@@ -3,54 +3,222 @@ package com.turkms
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.newSubtitleFile
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
+import org.jsoup.Jsoup
+import java.net.URLDecoder
+import java.util.Locale
 
 /**
- * Arabic subtitles from two keyless/API-key services:
+ * Arabic subtitle aggregation.
  *
- * 1. Wyzie Subs (`sub.wyzie.io`) when the user enters a free API key. It serves
- *    plain UTF-8 SRT/VTT download links and supports movie, season and episode
- *    lookups. The key is stored only in the local plugin settings.
- * 2. The keyless OpenSubtitles v3 Stremio addon, used as a fallback.
+ * Providers, in order of appearance in the player menu:
  *
- * Results are matched by IMDb id, so the subtitle belongs to the requested
- * movie/episode rather than a same-named release.
+ * 1. SubtitleCat - keyless, direct UTF-8 .srt links, title based.
+ * 2. Wyzie Subs - free API key, `source=all`, plain SRT/VTT links.
+ * 3. OpenSubtitles v3 Stremio addon - keyless fallback.
+ * 4. SubDL - free API key, ZIP downloads (resolved by SubtitleResolver).
+ * 5. SubSource - free API key, ZIP downloads (resolved by SubtitleResolver).
+ *
+ * All providers are queried in parallel and every result is matched to the
+ * requested movie or exact season/episode before it is shown.
  */
 object ArabicSubtitles {
     private const val STREMIO_BASE = "https://opensubtitles-v3.strem.io/subtitles"
     private const val WYZIE_BASE = "https://sub.wyzie.io"
-    private val ARABIC_CODES = setOf("ara", "ar")
-    private val PLAYABLE_FORMATS = setOf("srt", "vtt", "")
+    private const val SUBTITLECAT_BASE = "https://www.subtitlecat.com"
+    private const val SUBDL_API = "https://api.subdl.com/api/v1/subtitles"
+    private const val SUBSOURCE_API = "https://api.subsource.net/api/v1"
+
+    // SubtitleResolver converts ASS/SSA to SRT, so those formats are usable too.
+    private val PLAYABLE_FORMATS = setOf("srt", "vtt", "ass", "ssa", "")
+    private data class SubsourceCandidate(
+        val id: Int,
+        val release: String,
+        val exact: Boolean,
+        val unmarked: Boolean,
+    )
     private const val MAX_PER_SOURCE = 3
-    private const val MAX_TOTAL = 5
+    private const val MAX_TOTAL = 8
+    private const val PROVIDER_TIMEOUT_MS = 16_000L
+    private const val RESOLVE_TIMEOUT_MS = 10_000L
 
     suspend fun find(
         imdbId: String?,
+        title: String? = null,
+        originalTitle: String? = null,
+        year: Int? = null,
         isTv: Boolean,
         season: Int? = null,
         episode: Int? = null,
     ): List<SubtitleFile> {
         if (!TurkMSSettings.arabicSubtitles) return emptyList()
-        val id = normalizeImdb(imdbId) ?: return emptyList()
+        val id = normalizeImdb(imdbId)
+        val hasTitle = !title.isNullOrBlank() || !originalTitle.isNullOrBlank()
+        if (id == null && !hasTitle) return emptyList()
         if (isTv && (season == null || episode == null)) return emptyList()
+
+        val calls = mutableListOf<suspend () -> List<SubtitleFile>>()
+        calls += {
+            findSubtitleCat(title, originalTitle, year, isTv, season, episode)
+        }
+        if (id != null) {
+            calls += { findWyzie(id, isTv, season, episode) }
+            calls += { findStremio(id, isTv, season, episode) }
+        }
+        if (TurkMSSettings.subdlApiKey.isNotBlank()) {
+            calls += {
+                findSubdl(id, title, originalTitle, year, isTv, season, episode)
+            }
+        }
+        if (TurkMSSettings.subsourceApiKey.isNotBlank()) {
+            calls += {
+                findSubsource(id, title, originalTitle, year, isTv, season, episode)
+            }
+        }
+
+        // Parallel lookups keep the subtitle menu responsive when one provider
+        // is slow or rate-limited. A slow provider cannot hold the others back
+        // for longer than PROVIDER_TIMEOUT_MS.
+        val providerResults = coroutineScope {
+            calls.map { call ->
+                async {
+                    runCatching {
+                        withTimeoutOrNull(PROVIDER_TIMEOUT_MS) { call() } ?: emptyList()
+                    }.getOrDefault(emptyList())
+                }
+            }.awaitAll()
+        }
 
         val used = mutableSetOf<String>()
         val result = mutableListOf<SubtitleFile>()
+        for (subtitle in providerResults.flatten()) {
+            if (result.size >= MAX_TOTAL) break
+            if (used.add(subtitle.url)) result.add(subtitle)
+        }
+        return result
+    }
 
-        // A user-provided Wyzie key gives the best coverage and plain SRT links.
-        runCatching {
-            findWyzie(id, isTv, season, episode)
-        }.getOrDefault(emptyList()).forEach { subtitle ->
-            if (result.size < MAX_TOTAL && used.add(subtitle.url)) result.add(subtitle)
+    /**
+     * SubtitleCat exposes Arabic .srt files directly, so no API key and no
+     * archive handling are needed. Results are filtered by the requested year
+     * and exact season/episode marker.
+     */
+    private suspend fun findSubtitleCat(
+        title: String?,
+        originalTitle: String?,
+        year: Int?,
+        isTv: Boolean,
+        season: Int?,
+        episode: Int?,
+    ): List<SubtitleFile> {
+        val names = listOfNotNull(title, originalTitle)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+        if (names.isEmpty()) return emptyList()
+
+        val queries = buildList {
+            for (name in names) {
+                if (isTv) {
+                    add("$name S${season}E${episode}")
+                    add("$name ${season}x${episode}")
+                    // Title-only search is a useful fallback when the site's
+                    // episode marker formatting differs from the query.
+                    add(name)
+                } else {
+                    add(listOfNotNull(name, year?.toString()).joinToString(" "))
+                    add(name)
+                }
+            }
+        }.distinct().take(4)
+
+        val cacheKey = "subtitlecat:${normalizeTitle(title ?: originalTitle ?: "")}:" +
+            "${year ?: 0}:${season ?: 0}:${episode ?: 0}"
+        TurkMSCache.get<List<SubtitleFile>>(cacheKey)?.let { return it }
+
+        val candidates = mutableListOf<String>()
+        for (query in queries) {
+            val body = runCatching {
+                app.get(
+                    "$SUBTITLECAT_BASE/index.php?search=${encode(query)}",
+                    headers = TURKMS_HEADERS + mapOf(
+                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    ),
+                    timeout = TurkMSSettings.requestTimeout,
+                ).text
+            }.getOrNull() ?: continue
+
+            val document = runCatching { Jsoup.parse(body) }.getOrNull() ?: continue
+            for (anchor in document.select("a[href*=subs/]")) {
+                var href = anchor.attr("href").trim()
+                if (!href.endsWith(".html", ignoreCase = true)) continue
+                href = href
+                    .removePrefix("/")
+                    .removePrefix("https://www.subtitlecat.com/")
+                    .removePrefix("http://www.subtitlecat.com/")
+                if (href.isBlank() || href.startsWith("http")) continue
+                if (candidates.size < 30 && href !in candidates) candidates.add(href)
+            }
         }
 
-        runCatching {
-            findStremio(id, isTv, season, episode)
-        }.getOrDefault(emptyList()).forEach { subtitle ->
-            if (result.size < MAX_TOTAL && used.add(subtitle.url)) result.add(subtitle)
-        }
+        val ranked = candidates.mapNotNull { href ->
+            val fileName = decodeUrl(href.substringAfterLast('/').removeSuffix(".html"))
+                .replace('.', ' ')
+                .replace('_', ' ')
+            val marked = parseSeasonEpisode(fileName)
+            if (isTv) {
+                // A filename without SxxExx is too ambiguous and can easily
+                // show the wrong episode, so only exact markers are accepted.
+                if (marked == null || marked != (season to episode)) return@mapNotNull null
+            } else {
+                val candidateYear = parseYear(fileName)
+                if (year != null && candidateYear != null && candidateYear != year) {
+                    return@mapNotNull null
+                }
+                val score = maxOf(
+                    titleScore(fileName, title ?: ""),
+                    originalTitle?.let { titleScore(fileName, it) } ?: 0,
+                )
+                if (score < 30) return@mapNotNull null
+            }
+            href
+        }.distinct().take(3)
 
+        val result = mutableListOf<SubtitleFile>()
+        for (href in ranked) {
+            val detailUrl = absoluteUrl("$SUBTITLECAT_BASE/", href)
+            val body = runCatching {
+                app.get(
+                    detailUrl,
+                    headers = TURKMS_HEADERS + mapOf(
+                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    ),
+                    timeout = TurkMSSettings.requestTimeout,
+                ).text
+            }.getOrNull() ?: continue
+            val document = runCatching { Jsoup.parse(body) }.getOrNull() ?: continue
+
+            val download = document.selectFirst("a#download_ar")?.attr("href")
+                ?.takeIf { it.isNotBlank() }
+                ?: document.select("a[href*='-ar.srt']").firstOrNull()?.attr("href")
+                    ?.takeIf { it.isNotBlank() }
+                ?: continue
+            val downloadUrl = absoluteUrl(detailUrl, download)
+            if (downloadUrl.isBlank()) continue
+
+            result.add(
+                newSubtitleFile(lang = "Arabic", url = downloadUrl) {
+                    headers = mapOf("Referer" to "$SUBTITLECAT_BASE/")
+                }
+            )
+            if (result.size >= MAX_PER_SOURCE) break
+        }
+        if (result.isNotEmpty()) TurkMSCache.put(cacheKey, result)
         return result
     }
 
@@ -67,7 +235,9 @@ object ArabicSubtitles {
             append(WYZIE_BASE)
             append("/search?id=")
             append(encode(id))
-            append("&language=ar&format=srt,vtt&encoding=utf-8&limit=10&key=")
+            // `all` asks Wyzie to aggregate every source the key can access,
+            // instead of its small default source.
+            append("&source=all&language=ar&format=srt,ass&encoding=utf-8&limit=10&key=")
             append(encode(key))
             if (isTv) {
                 append("&season=")
@@ -88,8 +258,6 @@ object ArabicSubtitles {
             ).text
         }.getOrNull() ?: return emptyList()
 
-        // /search returns a JSON array; accept a wrapped array as well so a
-        // future API change does not silently disable subtitles.
         val items = runCatching {
             val trimmed = body.trim()
             when {
@@ -108,15 +276,25 @@ object ArabicSubtitles {
         for (i in 0 until items.length()) {
             if (result.size >= MAX_PER_SOURCE) break
             val item = items.optJSONObject(i) ?: continue
-            if (item.optString("language").lowercase() !in ARABIC_CODES) continue
-            if (item.optString("format").lowercase() !in PLAYABLE_FORMATS) continue
+            if (!isArabic(item.optString("language"))) continue
+            if (item.optString("format").lowercase(Locale.US) !in PLAYABLE_FORMATS) continue
             val subUrl = item.optString("url")
             if (subUrl.isBlank() || !seen.add(subUrl)) continue
             if (isTv) {
                 val marked = parseSeasonEpisode(item.optString("fileName"))
-                if (marked != null && marked != season!! to episode!!) continue
+                if (marked != null && marked != (season to episode)) continue
             }
-            result.add(newSubtitleFile(lang = "Arabic", url = subUrl))
+
+            val resolved = runCatching {
+                withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
+                    SubtitleResolver.resolve(subUrl, season = season, episode = episode)
+                }
+            }.getOrNull() ?: continue
+            result.add(
+                newSubtitleFile(lang = "Arabic", url = resolved.url) {
+                    headers = resolved.headers
+                }
+            )
         }
         return result
     }
@@ -153,7 +331,7 @@ object ArabicSubtitles {
         for (i in 0 until subtitles.length()) {
             if (result.size >= MAX_PER_SOURCE) break
             val item = subtitles.optJSONObject(i) ?: continue
-            if (item.optString("lang").lowercase() !in ARABIC_CODES) continue
+            if (!isArabic(item.optString("lang"))) continue
             val subUrl = item.optString("url")
             if (subUrl.isBlank() || !seen.add(subUrl)) continue
 
@@ -162,29 +340,287 @@ object ArabicSubtitles {
             // so drop an obvious mismatch instead of serving wrong subtitles.
             if (isTv) {
                 val marked = parseSeasonEpisode(item.optString("subtitleFileName"))
-                if (marked != null && marked != season!! to episode!!) continue
+                if (marked != null && marked != (season to episode)) continue
             }
 
-            result.add(newSubtitleFile(lang = "Arabic", url = subUrl))
+            val resolved = runCatching {
+                withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
+                    SubtitleResolver.resolve(subUrl, season = season, episode = episode)
+                }
+            }.getOrNull() ?: continue
+            result.add(
+                newSubtitleFile(lang = "Arabic", url = resolved.url) {
+                    headers = resolved.headers
+                }
+            )
         }
         return result
     }
 
-    private val EPISODE_PATTERNS = listOf(
-        Regex("""(?i)\bS(?:e(?:ason)?)?[\s._-]*(\d{1,2})[\s._-]*E(?:p(?:isode)?)?[\s._-]*(\d{1,3})\b"""),
-        Regex("""(?i)\b(\d{1,2})x(\d{1,3})\b"""),
-    )
+    /**
+     * SubDL API: search by IMDb id (or title), request Arabic, and prefer the
+     * individual files that `unpack=1` exposes for season packs. When no
+     * unpacked file matches, the season/movie ZIP is resolved locally.
+     */
+    private suspend fun findSubdl(
+        id: String?,
+        title: String?,
+        originalTitle: String?,
+        year: Int?,
+        isTv: Boolean,
+        season: Int?,
+        episode: Int?,
+    ): List<SubtitleFile> {
+        val key = TurkMSSettings.subdlApiKey.trim()
+        if (key.isBlank()) return emptyList()
 
-    private fun parseSeasonEpisode(fileName: String): Pair<Int, Int>? {
-        if (fileName.isBlank()) return null
-        for (pattern in EPISODE_PATTERNS) {
-            val match = pattern.find(fileName) ?: continue
-            val season = match.groupValues[1].toIntOrNull() ?: continue
-            val episode = match.groupValues[2].toIntOrNull() ?: continue
-            return season to episode
+        val params = buildMap {
+            put("api_key", key)
+            put("languages", "AR")
+            put("subs_per_page", "30")
+            put("unpack", "1")
+            if (id != null) {
+                put("imdb_id", id)
+            } else {
+                val query = title ?: originalTitle ?: return emptyList()
+                put("film_name", query)
+                if (year != null) put("year", year.toString())
+            }
+            if (isTv) {
+                put("type", "tv")
+                season?.let { put("season_number", it.toString()) }
+                episode?.let { put("episode_number", it.toString()) }
+            } else {
+                put("type", "movie")
+            }
         }
-        return null
+
+        val body = runCatching {
+            app.get(
+                SUBDL_API,
+                params = params,
+                headers = mapOf(
+                    "Accept" to "application/json",
+                    "User-Agent" to TURKMS_UA,
+                ),
+                timeout = TurkMSSettings.requestTimeout,
+            ).text
+        }.getOrNull() ?: return emptyList()
+
+        val root = runCatching { JSONObject(body) }.getOrNull() ?: return emptyList()
+        if (root.has("status") && !root.optBoolean("status")) return emptyList()
+        val subtitles = root.optJSONArray("subtitles") ?: return emptyList()
+
+        val result = mutableListOf<SubtitleFile>()
+        val seen = mutableSetOf<String>()
+        for (i in 0 until subtitles.length()) {
+            if (result.size >= MAX_PER_SOURCE) break
+            val item = subtitles.optJSONObject(i) ?: continue
+            val language = item.optString("language").ifBlank { item.optString("lang") }
+            if (!isArabic(language)) continue
+
+            var downloadUrl = subdlUrl(item.optString("url"))
+            if (downloadUrl.isBlank()) continue
+
+            val unpacked = item.optJSONArray("unpack_files")
+            if (unpacked != null) {
+                for (j in 0 until unpacked.length()) {
+                    val file = unpacked.optJSONObject(j) ?: continue
+                    val fileLanguage = file.optString("language").ifBlank { language }
+                    if (!isArabic(fileLanguage)) continue
+                    if (isTv) {
+                        val fileEpisode = file.optInt("episode", -1)
+                        if (fileEpisode != episode) continue
+                        val fileSeason = file.optInt("season", -1)
+                        if (fileSeason > 0 && season != null && fileSeason != season) continue
+                    }
+                    val fileUrl = subdlUrl(file.optString("url"))
+                    if (fileUrl.isNotBlank()) {
+                        downloadUrl = fileUrl
+                        break
+                    }
+                }
+            }
+
+            if (!seen.add(downloadUrl)) continue
+            val resolved = runCatching {
+                withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
+                    SubtitleResolver.resolve(downloadUrl, season = season, episode = episode)
+                }
+            }.getOrNull() ?: continue
+            result.add(
+                newSubtitleFile(lang = "Arabic", url = resolved.url) {
+                    headers = resolved.headers
+                }
+            )
+        }
+        return result
     }
+
+    /**
+     * SubSource API: resolve the movie/series id, list Arabic subtitles, and
+     * download the selected entry. Downloads are ZIP files, handled locally.
+     */
+    private suspend fun findSubsource(
+        id: String?,
+        title: String?,
+        originalTitle: String?,
+        year: Int?,
+        isTv: Boolean,
+        season: Int?,
+        episode: Int?,
+    ): List<SubtitleFile> {
+        val key = TurkMSSettings.subsourceApiKey.trim()
+        if (key.isBlank()) return emptyList()
+
+        val searchParams = buildMap {
+            if (id != null) {
+                put("searchType", "imdb")
+                put("imdb", id)
+            } else {
+                val query = title ?: originalTitle ?: return emptyList()
+                put("searchType", "text")
+                put("q", query)
+            }
+            if (isTv && season != null) put("season", season.toString())
+        }
+        val authHeaders = mapOf(
+            "X-API-Key" to key,
+            "Accept" to "application/json",
+            "User-Agent" to TURKMS_UA,
+        )
+
+        val searchBody = runCatching {
+            app.get(
+                "$SUBSOURCE_API/movies/search",
+                params = searchParams,
+                headers = authHeaders,
+                timeout = TurkMSSettings.requestTimeout,
+            ).text
+        }.getOrNull() ?: return emptyList()
+
+        val searchJson = runCatching { JSONObject(searchBody) }.getOrNull() ?: return emptyList()
+        if (!searchJson.optBoolean("success", true)) return emptyList()
+        val movies = searchJson.optJSONArray("data") ?: return emptyList()
+        val movie = (0 until movies.length())
+            .mapNotNull { movies.optJSONObject(it) }
+            .firstOrNull() ?: return emptyList()
+        val movieId = movie.optInt("movieId", movie.optInt("id", -1))
+        if (movieId <= 0) return emptyList()
+
+        val listBody = runCatching {
+            app.get(
+                "$SUBSOURCE_API/subtitles",
+                params = mapOf(
+                    "movieId" to movieId.toString(),
+                    "limit" to "100",
+                    "sort" to "popular",
+                ),
+                headers = authHeaders,
+                timeout = TurkMSSettings.requestTimeout,
+            ).text
+        }.getOrNull() ?: return emptyList()
+
+        val listJson = runCatching { JSONObject(listBody) }.getOrNull() ?: return emptyList()
+        if (!listJson.optBoolean("success", true)) return emptyList()
+        val entries = listJson.optJSONArray("data") ?: return emptyList()
+
+        val candidates = mutableListOf<SubsourceCandidate>()
+        for (i in 0 until entries.length()) {
+            val entry = entries.optJSONObject(i) ?: continue
+            if (!isArabic(entry.optString("language"))) continue
+            val subtitleId = entry.optInt("subtitleId", entry.optInt("id", -1))
+            if (subtitleId <= 0) continue
+
+            val releaseInfo = entry.optJSONArray("releaseInfo")?.let { array ->
+                (0 until array.length()).mapNotNull { array.optString(it).takeIf { v -> v.isNotBlank() } }
+                    .joinToString(" ")
+            } ?: entry.optString("releaseInfo")
+            val release = listOf(releaseInfo, entry.optString("releaseType"))
+                .filter { it.isNotBlank() }
+                .joinToString(" ")
+
+            val marked = parseSeasonEpisode(release)
+            if (isTv) {
+                if (marked != null && marked != (season to episode)) continue
+                candidates.add(
+                    SubsourceCandidate(
+                        id = subtitleId,
+                        release = release,
+                        exact = marked == (season to episode),
+                        unmarked = marked == null,
+                    )
+                )
+            } else {
+                candidates.add(
+                    SubsourceCandidate(
+                        id = subtitleId,
+                        release = release,
+                        exact = false,
+                        unmarked = true,
+                    )
+                )
+            }
+        }
+
+        val selected = if (isTv) {
+            val exact = candidates.filter { it.exact }
+            if (exact.isNotEmpty()) {
+                exact
+            } else {
+                // No episode marker at all is safer than a marker for a
+                // different episode. Wrong-episode matches are discarded.
+                candidates.filter { it.unmarked }
+            }
+        } else {
+            candidates
+        }.take(MAX_PER_SOURCE)
+
+        val result = mutableListOf<SubtitleFile>()
+        for (candidate in selected) {
+            val downloadUrl = "$SUBSOURCE_API/subtitles/${candidate.id}/download?api_key=${encode(key)}"
+            val resolved = runCatching {
+                withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
+                    SubtitleResolver.resolve(downloadUrl, season = season, episode = episode)
+                }
+            }.getOrNull() ?: continue
+            result.add(
+                newSubtitleFile(lang = "Arabic", url = resolved.url) {
+                    headers = resolved.headers
+                }
+            )
+        }
+        return result
+    }
+
+    private fun subdlUrl(raw: String): String {
+        val value = raw.trim()
+        if (value.isBlank()) return ""
+        val full = when {
+            value.startsWith("http://") || value.startsWith("https://") -> value
+            value.startsWith("/") -> "https://dl.subdl.com$value"
+            else -> "https://dl.subdl.com/$value"
+        }
+        // The API key belongs to api.subdl.com, not dl.subdl.com.
+        return Regex("""([?&])api_key=[^&]*""")
+            .replace(full) { it.groupValues[1] }
+            .replace("?&", "?")
+            .trimEnd('?', '&')
+    }
+
+    private fun isArabic(value: String?): Boolean {
+        val language = value?.trim()?.lowercase(Locale.US) ?: return false
+        return language == "ar" ||
+            language == "ara" ||
+            language == "arab" ||
+            language == "arabic" ||
+            language.startsWith("ar-") ||
+            language.contains("arab")
+    }
+
+    private fun decodeUrl(value: String): String = runCatching {
+        URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")
+    }.getOrDefault(value)
 
     /** Accepts `tt123`, `123`, or a TMDB/IMDb id string. */
     fun normalizeImdb(imdbId: String?): String? {

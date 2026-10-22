@@ -87,14 +87,39 @@ fun showSettingsDialog(context: Context) {
     layout.addView(wyzieInput)
 
     val wyzieHint = TextView(context).apply {
-        text = "A free Wyzie Subs key (store.wyzie.io/redeem) adds more Arabic " +
-            "subtitle sources. The key is stored only on this device. Without a " +
-            "key, the built-in OpenSubtitles fallback is still used."
+        text = "A free Wyzie Subs key (store.wyzie.io/redeem) queries all of its " +
+            "Arabic sources. SubtitleCat works without a key; SubDL and SubSource " +
+            "need the free keys below. Keys are stored only on this device."
         textSize = 11f
         setTextColor(Color.GRAY)
         setPadding(0, 0, 0, context.dp(8))
     }
     layout.addView(wyzieHint)
+
+    val subdlInput = EditText(context).apply {
+        hint = "SubDL API key (optional)"
+        setSingleLine()
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        setText(TurkMSSettings.subdlApiKey)
+    }
+    layout.addView(subdlInput)
+
+    val subsourceInput = EditText(context).apply {
+        hint = "SubSource API key (optional)"
+        setSingleLine()
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        setText(TurkMSSettings.subsourceApiKey)
+    }
+    layout.addView(subsourceInput)
+
+    val providerHint = TextView(context).apply {
+        text = "SubDL: subdl.com/panel/api  |  SubSource: subsource.net account " +
+            "→ API. Both providers also handle ZIP-packed subtitles locally."
+        textSize = 11f
+        setTextColor(Color.GRAY)
+        setPadding(0, 0, 0, context.dp(8))
+    }
+    layout.addView(providerHint)
 
     val qualityTitle = TextView(context).apply {
         text = "Preferred quality"
@@ -148,6 +173,8 @@ fun showSettingsDialog(context: Context) {
                 timeout = TurkMSSettings.requestTimeout,
                 subtitles = subtitles.isChecked,
                 wyzieKey = wyzieInput.text.toString(),
+                subdlKey = subdlInput.text.toString(),
+                subsourceKey = subsourceInput.text.toString(),
             )
             Toast.makeText(context, "TurkMS settings saved", Toast.LENGTH_SHORT).show()
             dialog.dismiss()

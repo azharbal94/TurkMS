@@ -18,6 +18,7 @@ import com.turkms.findPlayerIframe
 import com.turkms.firstImage
 import com.turkms.parseEpisodeNumber
 import com.turkms.parseJwSources
+import kotlinx.coroutines.withTimeoutOrNull
 import com.turkms.parseSeasonNumber
 import com.turkms.parseYear
 
@@ -32,14 +33,40 @@ class TrDiziIzleSource : SiteSource() {
     }
 
     override suspend fun latest(page: Int): List<SiteResult> {
-        if (page > 1) return emptyList()
-        // Same WordPress theme as canlidizi14; fall back to the home page if the
-        // series section is not available.
-        val series = fetchDocument("$mainUrl/kategori/e/")
-        val fromSeries = series?.let { parseCards(it) }.orEmpty()
-        if (fromSeries.isNotEmpty()) return fromSeries
-        val home = fetchDocument("$mainUrl/") ?: return emptyList()
-        return parseCards(home)
+        // Same WordPress theme as canlidizi14. The site blocks some networks,
+        // so each page tries the series section, the shared archive pattern and
+        // finally the home page. If a whole page fails, stop asking for more.
+        val firstPage = (page - 1) * 3 + 1
+        val results = mutableListOf<SiteResult>()
+        for (archivePage in firstPage until firstPage + 3) {
+            val candidates = if (archivePage == 1) {
+                listOf(
+                    "$mainUrl/kategori/e/",
+                    "$mainUrl/dizi-arsivi/",
+                    "$mainUrl/",
+                )
+            } else {
+                listOf(
+                    "$mainUrl/kategori/e/page/$archivePage/",
+                    "$mainUrl/dizi-arsivi/page/$archivePage",
+                )
+            }.distinct()
+
+            var found = false
+            for (url in candidates) {
+                // The site is unreachable on some networks; do not let three
+                // failed candidates hold the home screen for a full minute.
+                val document = withTimeoutOrNull(6_000) { fetchDocument(url) } ?: continue
+                val cards = parseCards(document)
+                if (cards.isNotEmpty()) {
+                    results.addAll(cards)
+                    found = true
+                    break
+                }
+            }
+            if (!found) break
+        }
+        return results.distinctBy { it.url }
     }
 
     private fun parseCards(document: org.jsoup.nodes.Document): List<SiteResult> {

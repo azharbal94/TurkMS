@@ -32,7 +32,7 @@ abstract class BaseSiteProvider(private val site: SiteSource) : MainAPI() {
 
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
     override val hasMainPage = true
-    override val mainPage = listOf(MainPageData("Latest", "latest"))
+    override val mainPage = listOf(MainPageData("Latest & Archive", "latest"))
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         if (request.data != "latest") return null
@@ -40,7 +40,11 @@ abstract class BaseSiteProvider(private val site: SiteSource) : MainAPI() {
         val items = runCatching { site.latest(page) }
             .getOrDefault(emptyList())
             .map { it.toSearchResponse(this) }
-        return newHomePageResponse(request, items)
+        // Sites return 30-90 cards per app page. A short page means the site's
+        // archive is exhausted, so the client can stop asking for more. Ddizi
+        // exposes a single latest page, so it never has a next page.
+        val hasNext = site.key != "ddizi" && items.size >= 10
+        return newHomePageResponse(request, items, hasNext = hasNext)
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
@@ -83,6 +87,8 @@ abstract class BaseSiteProvider(private val site: SiteSource) : MainAPI() {
             }
             ArabicSubtitles.find(
                 imdbId = imdb,
+                title = details.name,
+                year = details.year,
                 isTv = isTv,
                 season = episode?.season,
                 episode = episode?.episode,

@@ -19,6 +19,8 @@ object TurkMSSettings {
     private const val KEY_TIMEOUT = "request_timeout"
     private const val KEY_ARABIC_SUBS = "arabic_subtitles"
     private const val KEY_WYZIE = "wyzie_api_key"
+    private const val KEY_SUBDL = "subdl_api_key"
+    private const val KEY_SUBSOURCE = "subsource_api_key"
 
     /** Public demo key. A personal TMDB v3 key can be entered in the plugin settings. */
     const val FALLBACK_TMDB_KEY = "4e44d9029b1270a757cddc766a1bcb63"
@@ -33,6 +35,8 @@ object TurkMSSettings {
     var requestTimeout: Long = 20L
     var arabicSubtitles: Boolean = true
     var wyzieApiKey: String = ""
+    var subdlApiKey: String = ""
+    var subsourceApiKey: String = ""
 
     private var prefs: SharedPreferences? = null
 
@@ -49,6 +53,8 @@ object TurkMSSettings {
         requestTimeout = p.getLong(KEY_TIMEOUT, 20L)
         arabicSubtitles = p.getBoolean(KEY_ARABIC_SUBS, true)
         wyzieApiKey = p.getString(KEY_WYZIE, "") ?: ""
+        subdlApiKey = p.getString(KEY_SUBDL, "") ?: ""
+        subsourceApiKey = p.getString(KEY_SUBSOURCE, "") ?: ""
     }
 
     fun save(
@@ -63,6 +69,8 @@ object TurkMSSettings {
         timeout: Long,
         subtitles: Boolean,
         wyzieKey: String,
+        subdlKey: String = "",
+        subsourceKey: String = "",
     ) {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         p.edit()
@@ -76,6 +84,8 @@ object TurkMSSettings {
             .putLong(KEY_TIMEOUT, timeout)
             .putBoolean(KEY_ARABIC_SUBS, subtitles)
             .putString(KEY_WYZIE, wyzieKey.trim())
+            .putString(KEY_SUBDL, subdlKey.trim())
+            .putString(KEY_SUBSOURCE, subsourceKey.trim())
             .apply()
         prefs = p
         tmdbApiKey = tmdbKey.trim()
@@ -88,6 +98,8 @@ object TurkMSSettings {
         requestTimeout = timeout
         arabicSubtitles = subtitles
         wyzieApiKey = wyzieKey.trim()
+        subdlApiKey = subdlKey.trim()
+        subsourceApiKey = subsourceKey.trim()
     }
 
     fun effectiveTmdbKey(): String = tmdbApiKey.ifBlank { FALLBACK_TMDB_KEY }

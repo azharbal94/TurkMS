@@ -70,8 +70,15 @@ object TmdbClient {
     }
 
     suspend fun list(path: String, params: Map<String, String> = emptyMap()): List<TmdbItem> {
-        val json = request(path, params) ?: return emptyList()
-        return parseList(json.optJSONArray("results"))
+        // Catalog rows now request several TMDB pages at once. A short cache
+        // prevents a home-screen refresh from repeating all of those calls.
+        val cacheKey = "tmdb:list:$path:" + params.entries
+            .sortedBy { it.key }
+            .joinToString("&") { "${it.key}=${it.value}" }
+        return TurkMSCache.getOrPut(cacheKey) {
+            val json = request(path, params) ?: return@getOrPut null
+            parseList(json.optJSONArray("results"))
+        } ?: emptyList()
     }
 
     suspend fun searchMulti(query: String): List<TmdbItem> {

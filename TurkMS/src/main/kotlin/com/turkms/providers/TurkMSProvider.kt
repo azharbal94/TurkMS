@@ -48,7 +48,10 @@ import org.json.JSONObject
 
 class TurkMSProvider : MainAPI() {
     private companion object {
-        const val MAX_TMDB_PAGES = 5
+        // TMDB returns 20 items per page. Three TMDB pages per app page means
+        // every catalog row opens with 60 titles, and load-more keeps going.
+        const val TMDB_PAGES_PER_APP_PAGE = 3
+        const val MAX_APP_PAGES = 6
         const val TMDB_ENOUGH_RESULTS = 5
         const val MAX_CANDIDATES = 5
         const val SOURCE_TIMEOUT_MS = 22_000L
@@ -70,6 +73,9 @@ class TurkMSProvider : MainAPI() {
         MainPageData("New Turkish Series", "tr_series_new"),
         MainPageData("Top Rated Turkish Movies", "tr_movies_top"),
         MainPageData("Top Rated Turkish Series", "tr_series_top"),
+        // The Ddizi site has no TMDB metadata, but its own latest list is a
+        // useful, visible discovery row on the main page.
+        MainPageData("Ddizi Latest", "ddizi_latest"),
     )
 
     private fun today(): String =
@@ -95,76 +101,108 @@ class TurkMSProvider : MainAPI() {
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
-        // TMDB paginates 20 items per page; five pages is a good balance between
-        // choice and request volume on mobile.
-        if (page > MAX_TMDB_PAGES) return null
-        val items: List<TmdbItem> = when (request.data) {
+        if (request.data == "ddizi_latest") {
+            if (!TurkMSSettings.sourceDdizi) {
+                return newHomePageResponse(request, emptyList(), hasNext = false)
+            }
+            val items = runCatching { DdiziSource().latest(page) }
+                .getOrDefault(emptyList())
+            val list = items.map { it.toSiteSearchResponse("ddizi") }
+            return newHomePageResponse(
+                request,
+                list,
+                // /yeni-eklenenler8 is a single page, so do not offer a
+                // load-more action that would always return nothing.
+                hasNext = false,
+            )
+        }
+
+        if (page > MAX_APP_PAGES) return null
+
+        val (path, params) = when (request.data) {
             // with_original_language=tr keeps the catalogs Turkish-only, instead of
             // mixing in whatever happens to be popular worldwide.
-            "tr_movies" -> TmdbClient.list(
-                "/discover/movie",
-                mapOf(
-                    "with_original_language" to "tr",
-                    "sort_by" to "popularity.desc",
-                    "page" to "$page",
-                ),
+            "tr_movies" -> "/discover/movie" to mapOf(
+                "with_original_language" to "tr",
+                "sort_by" to "popularity.desc",
             )
 
-            "tr_series" -> TmdbClient.list(
-                "/discover/tv",
-                mapOf(
-                    "with_original_language" to "tr",
-                    "sort_by" to "popularity.desc",
-                    "page" to "$page",
-                ),
+            "tr_series" -> "/discover/tv" to mapOf(
+                "with_original_language" to "tr",
+                "sort_by" to "popularity.desc",
             )
 
-            "tr_movies_new" -> TmdbClient.list(
-                "/discover/movie",
-                mapOf(
-                    "with_original_language" to "tr",
-                    "sort_by" to "primary_release_date.desc",
-                    "vote_count.gte" to "5",
-                    "release_date.lte" to today(),
-                    "page" to "$page",
-                ),
+            "tr_movies_new" -> "/discover/movie" to mapOf(
+                "with_original_language" to "tr",
+                "sort_by" to "primary_release_date.desc",
+                "vote_count.gte" to "5",
+                "release_date.lte" to today(),
             )
 
-            "tr_series_new" -> TmdbClient.list(
-                "/discover/tv",
-                mapOf(
-                    "with_original_language" to "tr",
-                    "sort_by" to "first_air_date.desc",
-                    "vote_count.gte" to "5",
-                    "first_air_date.lte" to today(),
-                    "page" to "$page",
-                ),
+            "tr_series_new" -> "/discover/tv" to mapOf(
+                "with_original_language" to "tr",
+                "sort_by" to "first_air_date.desc",
+                "vote_count.gte" to "5",
+                "first_air_date.lte" to today(),
             )
 
-            "tr_movies_top" -> TmdbClient.list(
-                "/discover/movie",
-                mapOf(
-                    "with_original_language" to "tr",
-                    "sort_by" to "vote_average.desc",
-                    "vote_count.gte" to "100",
-                    "page" to "$page",
-                ),
+            "tr_movies_top" -> "/discover/movie" to mapOf(
+                "with_original_language" to "tr",
+                "sort_by" to "vote_average.desc",
+                "vote_count.gte" to "100",
             )
 
-            "tr_series_top" -> TmdbClient.list(
-                "/discover/tv",
-                mapOf(
-                    "with_original_language" to "tr",
-                    "sort_by" to "vote_average.desc",
-                    "vote_count.gte" to "100",
-                    "page" to "$page",
-                ),
+            "tr_series_top" -> "/discover/tv" to mapOf(
+                "with_original_language" to "tr",
+                "sort_by" to "vote_average.desc",
+                "vote_count.gte" to "100",
             )
 
-            else -> emptyList()
+            else -> return null
         }
-        val list = items.map { it.toSearchResponse(this) }
-        return newHomePageResponse(request, list, hasNext = page < MAX_TMDB_PAGES)
+
+        val items = fetchTmdbPages(path, params, page)
+        val list = items
+            .distinctBy { it.id to it.isTv }
+            .map { it.toSearchResponse(this) }
+        return newHomePageResponse(
+            request,
+            list,
+            hasNext = page < MAX_APP_PAGES,
+        )
+    }
+
+    /**
+     * Fetches several TMDB pages per app page. This is what makes a row show
+     * 60 titles immediately instead of the usual 20, while still supporting
+     * CloudStream's load-more flow.
+     */
+    private suspend fun fetchTmdbPages(
+        path: String,
+        params: Map<String, String>,
+        appPage: Int,
+    ): List<TmdbItem> = coroutineScope {
+        val firstPage = (appPage - 1) * TMDB_PAGES_PER_APP_PAGE + 1
+        (firstPage until firstPage + TMDB_PAGES_PER_APP_PAGE).map { tmdbPage ->
+            async {
+                TmdbClient.list(path, params + ("page" to tmdbPage.toString()))
+            }
+        }.awaitAll().flatten()
+    }
+
+    private fun SiteResult.toSiteSearchResponse(sourceKey: String): SearchResponse {
+        val dataUrl = buildSiteUrl(sourceKey, url)
+        return if (type == TvType.TvSeries) {
+            newTvSeriesSearchResponse(name, dataUrl, fix = false) {
+                posterUrl = this@toSiteSearchResponse.poster
+                year = this@toSiteSearchResponse.year
+            }
+        } else {
+            newMovieSearchResponse(name, dataUrl, fix = false) {
+                posterUrl = this@toSiteSearchResponse.poster
+                year = this@toSiteSearchResponse.year
+            }
+        }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse>? = search(query)
@@ -384,6 +422,8 @@ class TurkMSProvider : MainAPI() {
                         }
                         ArabicSubtitles.find(
                             imdbId = imdb,
+                            title = details.name,
+                            year = details.year,
                             isTv = isTv,
                             season = episode?.season,
                             episode = episode?.episode,
@@ -411,6 +451,9 @@ class TurkMSProvider : MainAPI() {
             }.getOrNull()
             ArabicSubtitles.find(
                 imdbId = imdb,
+                title = request.title,
+                originalTitle = request.originalTitle,
+                year = request.year,
                 isTv = request.season != null,
                 season = request.season,
                 episode = request.episode,

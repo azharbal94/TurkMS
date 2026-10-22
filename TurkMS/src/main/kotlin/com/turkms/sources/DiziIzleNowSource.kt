@@ -31,9 +31,20 @@ class DiziIzleNowSource : SiteSource() {
     }
 
     override suspend fun latest(page: Int): List<SiteResult> {
-        if (page > 1) return emptyList()
-        val document = fetchDocument("$mainUrl/diziler/") ?: return emptyList()
-        return parseCards(document)
+        // The all-series archive has 38 pages with 30 cards each. Three pages
+        // per app page makes the row 90 items without a long initial request.
+        val firstPage = (page - 1) * 3 + 1
+        val results = mutableListOf<SiteResult>()
+        for (archivePage in firstPage until firstPage + 3) {
+            val url = if (archivePage == 1) {
+                "$mainUrl/diziler/"
+            } else {
+                "$mainUrl/diziler/sayfa-$archivePage/"
+            }
+            val document = fetchDocument(url) ?: continue
+            results.addAll(parseCards(document))
+        }
+        return results.distinctBy { it.url }
     }
 
     private fun parseCards(document: org.jsoup.nodes.Document): List<SiteResult> {
