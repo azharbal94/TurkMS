@@ -75,25 +75,34 @@ object TmdbClient {
     }
 
     suspend fun searchMulti(query: String): List<TmdbItem> {
-        val json = request(
-            "/search/multi",
-            mapOf("query" to query, "page" to "1")
-        ) ?: return emptyList()
-        return parseList(json.optJSONArray("results")).filter { it.id > 0 }
+        val key = "tmdb:search:${normalizeTitle(query)}"
+        return TurkMSCache.getOrPut(key) {
+            val json = request(
+                "/search/multi",
+                mapOf("query" to query, "page" to "1")
+            ) ?: return@getOrPut null
+            parseList(json.optJSONArray("results")).filter { it.id > 0 }
+        } ?: emptyList()
     }
 
-    suspend fun movie(id: Int): JSONObject? = request(
-        "/movie/$id",
-        mapOf("append_to_response" to "credits,videos,recommendations,external_ids")
-    )
+    suspend fun movie(id: Int): JSONObject? = TurkMSCache.getOrPut("tmdb:movie:$id") {
+        request(
+            "/movie/$id",
+            mapOf("append_to_response" to "credits,videos,recommendations,external_ids")
+        )
+    }
 
-    suspend fun tv(id: Int): JSONObject? = request(
-        "/tv/$id",
-        mapOf("append_to_response" to "credits,videos,recommendations,external_ids")
-    )
+    suspend fun tv(id: Int): JSONObject? = TurkMSCache.getOrPut("tmdb:tv:$id") {
+        request(
+            "/tv/$id",
+            mapOf("append_to_response" to "credits,videos,recommendations,external_ids")
+        )
+    }
 
     suspend fun season(tvId: Int, season: Int): JSONObject? =
-        request("/tv/$tvId/season/$season")
+        TurkMSCache.getOrPut("tmdb:season:$tvId:$season") {
+            request("/tv/$tvId/season/$season")
+        }
 
     fun recommendations(details: JSONObject): List<TmdbItem> {
         val array = details.optJSONObject("recommendations")?.optJSONArray("results")
@@ -161,6 +170,18 @@ object TmdbClient {
         title: String,
         originalTitle: String? = null,
         year: Int? = null,
+        isTv: Boolean,
+    ): String? {
+        val key = "imdb:${isTv}:${normalizeTitle(title)}:${year ?: 0}"
+        return TurkMSCache.getOrPut(key) {
+            resolveImdbUncached(title, originalTitle, year, isTv)
+        }
+    }
+
+    private suspend fun resolveImdbUncached(
+        title: String,
+        originalTitle: String?,
+        year: Int?,
         isTv: Boolean,
     ): String? {
         val queries = listOfNotNull(title, originalTitle)

@@ -18,6 +18,7 @@ object TurkMSSettings {
     private const val KEY_QUALITY = "preferred_quality"
     private const val KEY_TIMEOUT = "request_timeout"
     private const val KEY_ARABIC_SUBS = "arabic_subtitles"
+    private const val KEY_WYZIE = "wyzie_api_key"
 
     /** Public demo key. A personal TMDB v3 key can be entered in the plugin settings. */
     const val FALLBACK_TMDB_KEY = "4e44d9029b1270a757cddc766a1bcb63"
@@ -31,6 +32,7 @@ object TurkMSSettings {
     var preferredQuality: Int = 1080
     var requestTimeout: Long = 20L
     var arabicSubtitles: Boolean = true
+    var wyzieApiKey: String = ""
 
     private var prefs: SharedPreferences? = null
 
@@ -46,6 +48,7 @@ object TurkMSSettings {
         preferredQuality = p.getInt(KEY_QUALITY, 1080)
         requestTimeout = p.getLong(KEY_TIMEOUT, 20L)
         arabicSubtitles = p.getBoolean(KEY_ARABIC_SUBS, true)
+        wyzieApiKey = p.getString(KEY_WYZIE, "") ?: ""
     }
 
     fun save(
@@ -59,6 +62,7 @@ object TurkMSSettings {
         quality: Int,
         timeout: Long,
         subtitles: Boolean,
+        wyzieKey: String,
     ) {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         p.edit()
@@ -71,6 +75,7 @@ object TurkMSSettings {
             .putInt(KEY_QUALITY, quality)
             .putLong(KEY_TIMEOUT, timeout)
             .putBoolean(KEY_ARABIC_SUBS, subtitles)
+            .putString(KEY_WYZIE, wyzieKey.trim())
             .apply()
         prefs = p
         tmdbApiKey = tmdbKey.trim()
@@ -82,6 +87,7 @@ object TurkMSSettings {
         preferredQuality = quality
         requestTimeout = timeout
         arabicSubtitles = subtitles
+        wyzieApiKey = wyzieKey.trim()
     }
 
     fun effectiveTmdbKey(): String = tmdbApiKey.ifBlank { FALLBACK_TMDB_KEY }

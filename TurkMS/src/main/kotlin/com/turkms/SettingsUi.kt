@@ -78,6 +78,24 @@ fun showSettingsDialog(context: Context) {
     }
     layout.addView(subtitles)
 
+    val wyzieInput = EditText(context).apply {
+        hint = "Wyzie Subs API key (optional)"
+        setSingleLine()
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        setText(TurkMSSettings.wyzieApiKey)
+    }
+    layout.addView(wyzieInput)
+
+    val wyzieHint = TextView(context).apply {
+        text = "A free Wyzie Subs key (store.wyzie.io/redeem) adds more Arabic " +
+            "subtitle sources. The key is stored only on this device. Without a " +
+            "key, the built-in OpenSubtitles fallback is still used."
+        textSize = 11f
+        setTextColor(Color.GRAY)
+        setPadding(0, 0, 0, context.dp(8))
+    }
+    layout.addView(wyzieHint)
+
     val qualityTitle = TextView(context).apply {
         text = "Preferred quality"
         textSize = 15f
@@ -129,6 +147,7 @@ fun showSettingsDialog(context: Context) {
                 quality = quality,
                 timeout = TurkMSSettings.requestTimeout,
                 subtitles = subtitles.isChecked,
+                wyzieKey = wyzieInput.text.toString(),
             )
             Toast.makeText(context, "TurkMS settings saved", Toast.LENGTH_SHORT).show()
             dialog.dismiss()

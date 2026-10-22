@@ -10,6 +10,7 @@ import com.turkms.SiteSource
 import com.turkms.absoluteUrl
 import com.turkms.emitLink
 import com.turkms.encode
+import com.turkms.extractFirePlayer
 import com.turkms.extractWithBuiltins
 import com.turkms.fetchDocument
 import com.turkms.firstImage
@@ -161,6 +162,9 @@ class CanliDizi14Source : SiteSource() {
         val ytId = youtubeId(playerUrl)
         if (ytId != null) {
             return extractWithBuiltins("https://www.youtube.com/watch?v=$ytId", url, callback)
+        }
+        if (playerUrl.contains("/fireplayer/video/")) {
+            if (extractFirePlayer(playerUrl, url, name, callback)) return true
         }
         if (playerUrl.contains("hlszone.com/video/")) {
             if (loadHlsZone(playerUrl, url, callback)) return true

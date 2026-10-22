@@ -9,9 +9,11 @@ playback links from third-party sites, and hands them to the player.
 ## Features
 
 - **English UI**: catalogs, settings, and error states are in English.
-- **Turkish TMDB catalogs**: Turkish movies and Turkish series
-  (`with_original_language=tr`), new Turkish movies, top-rated Turkish series,
-  now playing in Turkey, and weekly trending titles.
+- **Turkish-only catalogs**: six separate rows on the home page — Turkish
+  Movies, Turkish Series, New Turkish Movies, New Turkish Series, Top Rated
+  Turkish Movies, and Top Rated Turkish Series. All use TMDB
+  `with_original_language=tr`, so English, Korean, Japanese and other
+  productions are not mixed in.
 - **Search**: TMDB first; if it returns few results, the scraped sites are
   searched as well.
 - **Detail pages**: poster, backdrop, overview, year, runtime, score, genres,
@@ -20,12 +22,17 @@ playback links from third-party sites, and hands them to the player.
   stills.
 - **Multi-source playback**: links from several sites are merged, de-duplicated,
   and sorted by quality. Series come from four sites; movies come from YouTube.
+  The FirePlayer used by the series sites is read directly, including its
+  alternative servers, so one episode can offer several qualities and mirrors.
 - **1080p preference**: the quality chosen in settings (1080p by default) is
   moved to the top. Streams without a label are shown as `Unknown` instead of
   a fake resolution.
 - **Arabic subtitles (optional)**: matched by IMDb id (movie, or exact season
-  and episode), downloaded as UTF-8 SRT, and offered in the player's subtitle
-  menu. Enable or disable them in settings.
+  and episode), downloaded as UTF-8 SRT/VTT, and offered in the player's
+  subtitle menu. Add a free Wyzie Subs API key in settings for the widest
+  coverage; a keyless OpenSubtitles fallback still works without one.
+- **Fast navigation**: site searches, detail pages, and TMDB lookups are cached
+  for ten minutes, so switching episodes does not repeat the same requests.
 - **Toggleable sources**: disable any site from settings if it breaks.
 - **Separate providers**: besides the `TurkMS` aggregator, each site is
   registered as its own provider with a **Latest** catalog
@@ -104,6 +111,9 @@ Open **Extensions → TurkMS → Settings**:
   search.
 - **Arabic subtitles (optional)**: on by default. Turn it off to skip the
   subtitle lookup entirely.
+- **Wyzie Subs API key**: optional. Get a free key at
+  <https://store.wyzie.io/redeem> (1,000 requests/day, no payment). The key is
+  stored only on the device and adds more Arabic subtitle sources.
 - **Preferred quality**: 1080p (default), 720p, or 4K.
 - **Request timeout**: 20 seconds by default.
 
@@ -202,9 +212,12 @@ git push -f origin builds
 - **No streams for a movie**: YouTube extraction failed for that video. Try
   again later; the plugin never substitutes a wrong link.
 - **No Arabic subtitles for a title**: subtitles are matched by IMDb id, so a
-  title that TMDB cannot map to IMDb (or an OpenSubtitles entry that does not
-  exist yet) has no Arabic option. The video itself still plays; other
-  subtitle languages are not added by this plugin.
+  title that TMDB cannot map to IMDb (or an OpenSubtitles/Wyzie entry that does
+  not exist yet) has no Arabic option. Add a free Wyzie key in settings for
+  wider coverage; the video itself still plays without subtitles.
+- **Wyzie key rejected**: the search API returns 403 for an invalid or paused
+  key and 429 when the free daily limit is used up. Check the key or wait for
+  the UTC reset. The keyless fallback keeps working.
 - **TMDB errors**: the demo key is rate-limited. Add a personal key in
   settings.
 - **`trdiziizle.tv` returns 403**: the site blocks some networks/regions. It is
@@ -223,6 +236,8 @@ TurkMS/
 │       ├── sources/              # Site scrapers
 │       ├── Tmdb.kt               # TMDB v3 client
 │       ├── Subtitles.kt          # Optional Arabic subtitles (IMDb-matched)
+│       ├── FirePlayer.kt         # FirePlayer stream + alternate-server extractor
+│       ├── Cache.kt              # Short-lived search/detail cache
 │       ├── Mapping.kt            # Site models → CloudStream models
 │       ├── Site.kt               # Source abstraction + link helpers
 │       ├── Http.kt               # HTTP/HTML/header helpers

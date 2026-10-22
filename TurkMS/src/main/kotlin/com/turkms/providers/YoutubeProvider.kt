@@ -42,22 +42,27 @@ class YoutubeProvider : MainAPI() {
     override val hasMainPage = true
     override val mainPage = listOf(
         MainPageData("Turkish Movies", "turkish"),
-        MainPageData("Popular Movies", "popular"),
-        MainPageData("Trending Movies", "trending"),
+        MainPageData("New Turkish Movies", "turkish_new"),
     )
+
+    private fun today(): String =
+        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         if (page > 1) return null
         val path = when (request.data) {
-            "turkish" -> "/discover/movie"
-            "popular" -> "/movie/popular"
-            "trending" -> "/trending/movie/week"
+            "turkish", "turkish_new" -> "/discover/movie"
             else -> return null
         }
-        val params = if (request.data == "turkish") {
-            mapOf("with_original_language" to "tr", "sort_by" to "popularity.desc")
+        val params = if (request.data == "turkish_new") {
+            mapOf(
+                "with_original_language" to "tr",
+                "sort_by" to "primary_release_date.desc",
+                "vote_count.gte" to "5",
+                "release_date.lte" to today(),
+            )
         } else {
-            emptyMap()
+            mapOf("with_original_language" to "tr", "sort_by" to "popularity.desc")
         }
         val items = TmdbClient.list(path, params).map { item ->
             newMovieSearchResponse(item.title, "$MOVIE_PREFIX${item.id}", fix = false) {

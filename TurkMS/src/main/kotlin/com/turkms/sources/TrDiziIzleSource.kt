@@ -10,6 +10,7 @@ import com.turkms.SiteSource
 import com.turkms.absoluteUrl
 import com.turkms.emitLink
 import com.turkms.encode
+import com.turkms.extractFirePlayer
 import com.turkms.extractWithBuiltins
 import com.turkms.fetchDocument
 import com.turkms.fetchText
@@ -146,6 +147,9 @@ class TrDiziIzleSource : SiteSource() {
         val document = fetchDocument(url) ?: return false
         val iframe = findPlayerIframe(document) ?: return false
         val playerUrl = absoluteUrl(mainUrl, iframe)
+        if (playerUrl.contains("/fireplayer/video/")) {
+            if (extractFirePlayer(playerUrl, url, name, callback)) return true
+        }
         if (playerUrl.contains("/player/oynat/")) {
             val html = fetchText(playerUrl, url) ?: return false
             val sources = parseJwSources(html)

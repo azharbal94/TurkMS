@@ -24,6 +24,7 @@ import com.turkms.SiteResult
 import com.turkms.SiteSource
 import com.turkms.TmdbClient
 import com.turkms.TmdbItem
+import com.turkms.TurkMSCache
 import com.turkms.TurkMSSettings
 import com.turkms.buildAggData
 import com.turkms.buildSiteUrl
@@ -49,7 +50,8 @@ class TurkMSProvider : MainAPI() {
     private companion object {
         const val MAX_TMDB_PAGES = 5
         const val TMDB_ENOUGH_RESULTS = 5
-        const val MAX_CANDIDATES = 6
+        const val MAX_CANDIDATES = 5
+        const val SOURCE_TIMEOUT_MS = 22_000L
     }
 
     override var mainUrl = "https://www.themoviedb.org"
@@ -59,13 +61,15 @@ class TurkMSProvider : MainAPI() {
     override val hasQuickSearch = true
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
+    // Every row is Turkish-only. Movies and series each get their own rows so
+    // the home page never mixes in English, Korean, Japanese or other content.
     override val mainPage = listOf(
         MainPageData("Turkish Movies", "tr_movies"),
         MainPageData("Turkish Series", "tr_series"),
         MainPageData("New Turkish Movies", "tr_movies_new"),
+        MainPageData("New Turkish Series", "tr_series_new"),
+        MainPageData("Top Rated Turkish Movies", "tr_movies_top"),
         MainPageData("Top Rated Turkish Series", "tr_series_top"),
-        MainPageData("Now Playing in Turkey", "movie_now"),
-        MainPageData("Trending This Week", "trending"),
     )
 
     private fun today(): String =
@@ -126,6 +130,27 @@ class TurkMSProvider : MainAPI() {
                 ),
             )
 
+            "tr_series_new" -> TmdbClient.list(
+                "/discover/tv",
+                mapOf(
+                    "with_original_language" to "tr",
+                    "sort_by" to "first_air_date.desc",
+                    "vote_count.gte" to "5",
+                    "first_air_date.lte" to today(),
+                    "page" to "$page",
+                ),
+            )
+
+            "tr_movies_top" -> TmdbClient.list(
+                "/discover/movie",
+                mapOf(
+                    "with_original_language" to "tr",
+                    "sort_by" to "vote_average.desc",
+                    "vote_count.gte" to "100",
+                    "page" to "$page",
+                ),
+            )
+
             "tr_series_top" -> TmdbClient.list(
                 "/discover/tv",
                 mapOf(
@@ -136,12 +161,6 @@ class TurkMSProvider : MainAPI() {
                 ),
             )
 
-            "movie_now" -> TmdbClient.list(
-                "/movie/now_playing",
-                mapOf("page" to "$page", "region" to "TR"),
-            )
-
-            "trending" -> TmdbClient.list("/trending/all/week", mapOf("page" to "$page"))
             else -> emptyList()
         }
         val list = items.map { it.toSearchResponse(this) }
@@ -166,8 +185,12 @@ class TurkMSProvider : MainAPI() {
             enabledSources().filter { it.key != "youtube" }.map { source ->
                 async {
                     val results = runCatching {
-                        withTimeoutOrNull(20_000) { source.search(query) } ?: emptyList()
-                    }.getOrDefault(emptyList())
+                        withTimeoutOrNull(15_000) {
+                            TurkMSCache.getOrPut(
+                                "search:${source.key}:${normalizeTitle(query)}",
+                            ) { source.search(query) }
+                        } ?: emptyList()
+                    }.getOrNull() ?: emptyList()
                     results.map { source to it }
                 }
             }.awaitAll().flatten()
@@ -403,7 +426,7 @@ class TurkMSProvider : MainAPI() {
             sources.map { source ->
                 async {
                     runCatching {
-                        withTimeoutOrNull(45_000) { collectFromSource(source, request) }
+                        withTimeoutOrNull(SOURCE_TIMEOUT_MS) { collectFromSource(source, request) }
                             ?: emptyList()
                     }.getOrDefault(emptyList())
                 }
@@ -425,9 +448,24 @@ class TurkMSProvider : MainAPI() {
             .filter { it.isNotBlank() }
             .distinctBy { normalizeTitle(it) }
 
+        // Query the Turkish and original title in parallel instead of one after
+        // another. Searches are cached, so switching episodes is much faster.
+        val perQuery = coroutineScope {
+            queries.map { query ->
+                async<List<SiteResult>> {
+                    runCatching {
+                        TurkMSCache.getOrPut(
+                            "search:${source.key}:${normalizeTitle(query)}",
+                        ) {
+                            withTimeoutOrNull(12_000) { source.search(query) } ?: emptyList()
+                        }
+                    }.getOrNull() ?: emptyList()
+                }
+            }.awaitAll()
+        }
+
         val candidates = mutableListOf<Pair<SiteResult, Int>>()
-        for (query in queries) {
-            val results = runCatching { source.search(query) }.getOrDefault(emptyList())
+        for ((query, results) in queries.zip(perQuery)) {
             for (result in results) {
                 var score = maxOf(
                     titleScore(result.name, request.title),
@@ -440,6 +478,8 @@ class TurkMSProvider : MainAPI() {
         if (candidates.isEmpty()) return emptyList()
 
         val links = mutableListOf<ExtractorLink>()
+        val deadline = System.currentTimeMillis() + 18_000
+        var attempts = 0
 
         // Search-result types are only a hint (canlidizi14 marks digital series as
         // movies); the detail page decides what a candidate actually is.
@@ -449,10 +489,19 @@ class TurkMSProvider : MainAPI() {
             .distinctBy { it.first.url }
             .take(MAX_CANDIDATES)
 
-        if (request.season != null && request.episode != null) {
-            for ((result, _) in ranked) {
-                val details = runCatching { source.details(result.url) }.getOrNull() ?: continue
-                if (details.type != TvType.TvSeries || details.episodes.isEmpty()) continue
+        for ((result, _) in ranked) {
+            if (attempts >= 3 || System.currentTimeMillis() > deadline) break
+            attempts++
+            val details = runCatching {
+                TurkMSCache.getOrPut("details:${source.key}:${result.url}") {
+                    withTimeoutOrNull(12_000) { source.details(result.url) }
+                }
+            }.getOrNull()
+
+            if (request.season != null && request.episode != null) {
+                if (details == null || details.type != TvType.TvSeries || details.episodes.isEmpty()) {
+                    continue
+                }
                 val episode = details.episodes.firstOrNull {
                     it.season == request.season && it.episode == request.episode
                 } ?: if (request.season == 1) {
@@ -464,16 +513,31 @@ class TurkMSProvider : MainAPI() {
                         details.episodes.firstOrNull { it.episode == absolute }
                     }
                 } ?: continue
-                val ok = runCatching { source.loadLinks(episode.url) { links.add(it) } }.getOrDefault(false)
-                if (ok && links.isNotEmpty()) break
-            }
-        } else {
-            for ((result, _) in ranked) {
-                val details = runCatching { source.details(result.url) }.getOrNull()
+
+                runCatching {
+                    withTimeoutOrNull(15_000) {
+                        source.loadLinks(episode.url) { links.add(it) }
+                    } ?: false
+                }
+            } else {
                 if (details != null && details.episodes.isNotEmpty()) continue
-                val ok = runCatching { source.loadLinks(result.url) { links.add(it) } }.getOrDefault(false)
-                if (ok && links.isNotEmpty()) break
+                runCatching {
+                    withTimeoutOrNull(15_000) {
+                        source.loadLinks(result.url) { links.add(it) }
+                    } ?: false
+                }
             }
+
+            // More than one candidate usually just repeats the same episode.
+            // For movies, collect a few YouTube uploads so there are multiple
+            // playback options (and a better chance of a 1080p one).
+            val preferredAvailable = links.any { it.quality == TurkMSSettings.preferredQuality }
+            val enough = if (request.season != null) {
+                preferredAvailable || links.size >= 4
+            } else {
+                links.size >= 3
+            }
+            if (enough) break
         }
         return links
     }
