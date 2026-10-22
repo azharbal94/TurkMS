@@ -1,11 +1,11 @@
 version = 1
 
 cloudstream {
-    description = "TurkMS - Türk filmleri ve dizileri için TMDB destekli, çok kaynaklı CloudStream eklentisi."
+    description = "TurkMS - TMDB-powered multi-source CloudStream plugin for Turkish movies and TV series."
     authors = listOf("TurkMS")
     status = 1
     tvTypes = listOf("Movie", "TvSeries")
-    language = "tr"
+    language = "en"
     iconUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Flag_of_Turkey.svg/256px-Flag_of_Turkey.svg.png"
 }
 

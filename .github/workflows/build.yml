@@ -41,6 +41,9 @@ jobs:
 
       - name: Build plugin and plugin list
         working-directory: src
+        env:
+          # Ensure the generated plugins.json points at this repository.
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           chmod +x gradlew
           ./gradlew make makePluginsJson --no-daemon --console=plain
@@ -75,7 +78,7 @@ jobs:
           cat > repo.json <<EOF
           {
               "name": "TurkMS",
-              "description": "TurkMS - TMDB destekli Turk film ve dizi eklentisi (coklu kaynak oynatma).",
+              "description": "TurkMS - TMDB-powered multi-source CloudStream plugin for Turkish movies and TV series.",
               "manifestVersion": 1,
               "pluginLists": [
                   "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/builds/plugins.json"
