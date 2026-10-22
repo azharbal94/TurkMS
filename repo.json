@@ -1,0 +1,8 @@
+{
+    "name": "TurkMS",
+    "description": "TurkMS - TMDB destekli Turk film ve dizi eklentisi (coklu kaynak oynatma).",
+    "manifestVersion": 1,
+    "pluginLists": [
+        "https://raw.githubusercontent.com/azharbal94/TurkMS/builds/plugins.json"
+    ]
+}
