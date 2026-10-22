@@ -6,7 +6,7 @@
         "repositoryUrl": "https://github.com/azharbal94/TurkMS",
         "fileSize": 87348,
         "status": 1,
-        "language": "tr",
+        "language": "en",
         "authors": [
             "TurkMS"
         ],
@@ -16,7 +16,7 @@
         ],
         "version": 1,
         "internalName": "TurkMS",
-        "description": "TurkMS - T\u00fcrk filmleri ve dizileri i\u00e7in TMDB destekli, \u00e7ok kaynakl\u0131 CloudStream eklentisi.",
+        "description": "TurkMS - TMDB-powered multi-source CloudStream plugin for Turkish movies and TV series.",
         "url": "https://raw.githubusercontent.com/azharbal94/TurkMS/builds/TurkMS.cs3",
         "name": "TurkMS"
     }
