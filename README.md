@@ -130,6 +130,67 @@ $env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
 > kullandığından eski Kotlin sürümüyle derleme
 > `binary version of its metadata is 2.4.0` hatası verir.
 
+## Yayınlama (GitHub)
+
+Bu bölüm, eklentiyi herkesin kurabileceği bir depo hâline getirmek içindir.
+Tek seferlik kurulum:
+
+1. GitHub'da **public** bir depo oluşturun (örnek ad: `TurkMS`).
+2. Yerel depoyu bağlayıp gönderin:
+
+   ```bash
+   git remote add origin https://github.com/<KULLANICI>/TurkMS.git
+   git push -u origin main
+   ```
+
+3. Depoda **Settings → Actions → General → Workflow permissions** yolunu
+   izleyip **Read and write permissions** seçeneğini işaretleyin. Bu izin
+   olmadan CI `builds` dalına yazamaz.
+4. **Actions** sekmesinde `Build` iş akışının bitmesini bekleyin. İlk çalışma
+   birkaç dakika sürer.
+5. `builds` dalında şu üç dosya oluşur: `TurkMS.cs3`, `plugins.json`,
+   `repo.json`.
+
+Bundan sonra `main` dalına yapılan her push otomatik olarak yeniden yayınlanır.
+Sadece `*.md` ve `LICENSE` değişiklikleri derlemeyi tetiklemez; gerekirse
+**Actions → Build → Run workflow** ile elle çalıştırın.
+
+### Paylaşılacak adresler
+
+Depo adresi (CloudStream → Depo Ekle):
+
+```
+https://raw.githubusercontent.com/<KULLANICI>/TurkMS/builds/repo.json
+```
+
+Tek tıkla kurulum bağlantısı:
+
+```
+cloudstreamrepo://raw.githubusercontent.com/<KULLANICI>/TurkMS/builds/repo.json
+```
+
+CNCVerse Bridge de aynı `repo.json` adresini kabul eder. `plugins.json`
+içindeki `repositoryUrl`, `.cs3` indirme adresi ve dosya özeti CI tarafından
+otomatik hesaplanır; elle güncelleme gerekmez.
+
+### Actions olmadan yayınlama
+
+GitHub Actions kullanılamıyorsa aynı çıktılar yerelde üretilip `builds`
+dalına itilebilir:
+
+```bash
+./gradlew make makePluginsJson
+
+git checkout --orphan builds
+git rm -rf .
+cp TurkMS/build/TurkMS.cs3 .
+cp build/plugins.json .
+# repo.json: yukarıdaki örnek içerik, pluginLists alanı kendi depo adresiniz
+git add -A
+git commit -m "Manual build"
+git push -f origin builds
+```
+
 ## Proje yapısı
 
 ```

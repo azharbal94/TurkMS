@@ -60,11 +60,11 @@ jobs:
             git checkout --quiet -B builds origin/builds
           else
             git checkout --quiet --orphan builds
-            git rm -rf . > /dev/null 2>&1 || true
           fi
 
-          # Drop stale artifacts, keep only the freshly built ones.
-          rm -f ./*.cs3 ./*.json
+          # Keep only the freshly built artifacts on this branch.
+          git rm -rf . > /dev/null 2>&1 || true
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
 
           cp ../src/*/build/*.cs3 .
           cp ../src/build/plugins.json .
