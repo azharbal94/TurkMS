@@ -1,10 +1,10 @@
 [
     {
         "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Flag_of_Turkey.svg/256px-Flag_of_Turkey.svg.png",
-        "fileHash": "sha256-d1f3c7df2f751331c60900e246a5972cbdd9648a2e1b6862af27c353b7a1e3ce",
+        "fileHash": "sha256-52b1ab7d3c89e0bbfb9374aa2d240023c64559583c08dad416889e0acaf832e5",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/azharbal94/TurkMS",
-        "fileSize": 187230,
+        "fileSize": 187132,
         "status": 1,
         "language": "en",
         "authors": [
