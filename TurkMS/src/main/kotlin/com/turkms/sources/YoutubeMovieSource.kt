@@ -9,6 +9,7 @@ import com.turkms.decode
 import com.turkms.encode
 import com.turkms.extractYoutubeWithFallback
 import com.turkms.fetchText
+import com.turkms.normalizeTitle
 import com.turkms.titleScore
 import com.turkms.youtubeId
 import org.json.JSONArray
@@ -50,6 +51,10 @@ class YoutubeMovieSource : SiteSource() {
 
         val results = mutableListOf<SiteResult>()
         val seen = mutableSetOf<String>()
+        // A one-word title such as "Baba" can only contribute one matching
+        // word (20 points), so do not require the two-word score for it.
+        val meaningfulWords = normalizeTitle(query).split(" ").count { it.length > 2 }
+        val requiredScore = if (meaningfulWords > 1) 40 else 20
         for (renderer in renderers) {
             val id = renderer.optString("videoId")
             if (id.isBlank() || !seen.add(id)) continue
@@ -64,7 +69,7 @@ class YoutubeMovieSource : SiteSource() {
             )
             // Movies are long; Shorts and clips would only add noise.
             if (duration < MIN_MOVIE_SECONDS) continue
-            if (titleScore(title, query) < 40) continue
+            if (titleScore(title, query) < requiredScore) continue
 
             val poster = "https://i.ytimg.com/vi/$id/hqdefault.jpg"
             results.add(

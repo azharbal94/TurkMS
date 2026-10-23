@@ -113,7 +113,7 @@ class DdiziSource : SiteSource() {
             val href = absoluteUrl(mainUrl, link.attr("href"))
             if (href.isBlank()) continue
             if (href in foreignUrls) continue
-            if (href.substringAfterLast('/') in KNOWN_FOREIGN_SLUGS) continue
+            if (KNOWN_FOREIGN_SLUGS.any { slug -> href.contains(slug) }) continue
 
             val title = (link.attr("title").ifBlank { link.text() })
                 .replace(Regex("(?i)\\s+son\\s+b[oö]l[uü]m\\s+izle.*$"), "")
