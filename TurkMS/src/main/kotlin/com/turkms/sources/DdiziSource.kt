@@ -16,6 +16,7 @@ import com.turkms.fetchDocument
 import com.turkms.fetchText
 import com.turkms.findPlayerIframe
 import com.turkms.firstImage
+import com.turkms.normalizeTitle
 import com.turkms.parseEpisodeNumber
 import com.turkms.parseJwSources
 import com.turkms.parseSeasonNumber
@@ -92,6 +93,7 @@ class DdiziSource : SiteSource() {
         latest?.let { items.addAll(parseLinks(it, foreignUrls)) }
         archive?.let { items.addAll(parseLinks(it, foreignUrls)) }
         val deduped = items.distinctBy { it.url }
+            .distinctBy { normalizeTitle(it.name) }
         if (deduped.isNotEmpty()) catalogCache = now to deduped
         return deduped
     }
