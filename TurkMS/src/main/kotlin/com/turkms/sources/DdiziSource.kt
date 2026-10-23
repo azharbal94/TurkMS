@@ -204,7 +204,9 @@ class DdiziSource : SiteSource() {
             .map { absoluteUrl(mainUrl, it.attr("href")) }
             .filter { it.isNotBlank() && it != firstUrl }
             .distinct()
-            .take(12)
+            // Long-running shows (e.g. Kızılcık Şerbeti) expose 15+ pages.
+            // Follow all of them; the site's own pages are 10 episodes each.
+            .take(30)
 
         for (pageUrl in pages) {
             val page = fetchDocument(pageUrl, firstUrl) ?: continue
