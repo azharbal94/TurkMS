@@ -33,10 +33,18 @@ playback links from third-party sites, and hands them to the player.
   and sorted by quality. Series come from four sites; movies come from YouTube.
   The FirePlayer used by the series sites is read directly, including its
   alternative servers, so one episode can offer several qualities and mirrors.
+- **Fast starts**: the aggregator no longer waits for the slowest site. Playback
+  links are released as soon as the first source answers, with a short grace
+  window for extra mirrors, so a Cloudflare-challenged site cannot stall the
+  whole episode.
 - **Working YouTube playback**: YouTube's normal web player is now SABR-only,
   so the plugin asks the **visionOS InnerTube** client for an adaptive HLS
   manifest first and falls back to CloudStream's extractor only if that fails.
-  This is used by the YouTube provider, Diziizle, Alıkara-style embeds, and
+  YouTube rate-limits the raw adaptive streams to roughly 3 Mbps, so the
+  unthrottled HLS path is kept, and its master playlist is rewritten to drop
+  VP9/AV1 renditions. That stops ExoPlayer from choosing a software-decoded
+  codec on weak devices, which is a common cause of endless buffering. This is
+  used by the YouTube provider, Diziizle, Alıkara-style embeds, and
   CanlıDizi14's YouTube mirrors.
 - **Ddizi playback fix**: `video.twimg.com` streams use `https://x.com/` as
   Referer, because the Ddizi page Referer returns 403.

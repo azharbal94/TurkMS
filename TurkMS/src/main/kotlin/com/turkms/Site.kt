@@ -74,7 +74,10 @@ suspend fun emitLink(
             // still playable, but it will not pretend to be 1080p.
             this.quality = qualityFromLabel(label)
             this.referer = referer
-            this.headers = headers
+            // Always send browser-like playback headers. Without them some CDNs
+            // serve throttled responses to ExoPlayer's default client, which
+            // looks like constant buffering even though the link is valid.
+            this.headers = TURKMS_PLAYBACK_HEADERS + headers
         }
     )
 }

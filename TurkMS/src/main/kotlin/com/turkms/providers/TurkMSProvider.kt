@@ -46,8 +46,11 @@ import com.turkms.toLoadResponse
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
+import java.util.Collections
 
 class TurkMSProvider : MainAPI() {
     private companion object {
@@ -58,6 +61,13 @@ class TurkMSProvider : MainAPI() {
         const val TMDB_ENOUGH_RESULTS = 5
         const val MAX_CANDIDATES = 5
         const val SOURCE_TIMEOUT_MS = 22_000L
+
+        // A slow source (Cloudflare challenge, dead CDN) used to hold back every
+        // link until the 22s timeout, which the player shows as buffering. Start
+        // playback as soon as one source is done and give the others a short
+        // grace period to add mirrors.
+        const val COLLECT_TIMEOUT_MS = 14_000L
+        const val MIRROR_GRACE_MS = 2_500L
     }
 
     override var mainUrl = "https://www.themoviedb.org"
@@ -558,19 +568,41 @@ class TurkMSProvider : MainAPI() {
     private suspend fun collectLinks(request: AggRequest): List<ExtractorLink> {
         val sources = enabledSources()
         if (sources.isEmpty()) return emptyList()
-        val perSource = coroutineScope {
-            sources.map { source ->
-                async {
-                    runCatching {
+
+        val results = Collections.synchronizedList(mutableListOf<ExtractorLink>())
+        coroutineScope {
+            val jobs = sources.map { source ->
+                launch {
+                    val found = try {
                         withTimeoutOrNull(SOURCE_TIMEOUT_MS) { collectFromSource(source, request) }
-                            ?: emptyList()
-                    }.getOrDefault(emptyList())
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (_: Throwable) {
+                        null
+                    }
+                    if (!found.isNullOrEmpty()) results.addAll(found)
                 }
-            }.awaitAll()
+            }
+
+            val started = System.currentTimeMillis()
+            var firstResultAt = 0L
+            while (true) {
+                val now = System.currentTimeMillis()
+                // Every source finished (or was cancelled) - nothing left to wait for.
+                if (jobs.none { it.isActive }) break
+                if (results.isNotEmpty()) {
+                    if (firstResultAt == 0L) firstResultAt = now
+                    if (now - firstResultAt >= MIRROR_GRACE_MS) break
+                }
+                if (now - started >= COLLECT_TIMEOUT_MS) break
+                delay(75)
+            }
+            jobs.forEach { it.cancel() }
         }
 
+        val snapshot = synchronized(results) { results.toList() }
         val seen = mutableSetOf<String>()
-        return perSource.flatten()
+        return snapshot
             .filter { it.url.isNotBlank() && seen.add(it.url) }
             .sortForPreferredQuality()
     }

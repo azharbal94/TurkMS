@@ -271,8 +271,15 @@ class DdiziSource : SiteSource() {
                         },
                         // video.twimg.com returns 403 when the Ddizi page is
                         // used as Referer. x.com (or no Referer) works.
+                        // Twitter's HLS segment CDN also checks Origin on some
+                        // networks; adding it prevents repeated 403 retries.
                         referer = if (isTwitter) "https://x.com/" else playerUrl,
                         callback = callback,
+                        headers = if (isTwitter) {
+                            mapOf("Origin" to "https://x.com")
+                        } else {
+                            emptyMap()
+                        },
                     )
                 }
                 return true

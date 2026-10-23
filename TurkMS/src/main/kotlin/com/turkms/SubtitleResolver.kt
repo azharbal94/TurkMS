@@ -319,6 +319,17 @@ object SubtitleResolver {
     }
 }
 
+/**
+ * Serves an in-memory HLS master playlist from the same loopback server used
+ * for extracted subtitles. CloudStream's player only understands http(s), and
+ * rewriting YouTube's master is the only way to keep ExoPlayer from choosing a
+ * VP9/AV1 rendition that a low-end decoder cannot sustain.
+ */
+suspend fun serveLocalPlaylist(text: String): String? {
+    if (text.isBlank()) return null
+    return SubtitleProxy.serve(text.toByteArray(StandardCharsets.UTF_8), "m3u8")
+}
+
 private val SUBTITLE_EPISODE_PATTERNS = listOf(
     Regex("""(?i)\bS(?:e(?:ason)?)?[\s._-]*(\d{1,2})[\s._-]*E(?:p(?:isode)?)?[\s._-]*(\d{1,3})\b"""),
     Regex("""(?i)\b(\d{1,2})x(\d{1,3})\b"""),
@@ -359,7 +370,11 @@ private object SubtitleProxy {
 
     suspend fun serve(body: ByteArray, extension: String): String? {
         if (body.isEmpty()) return null
-        val safeExtension = if (extension.equals("vtt", ignoreCase = true)) "vtt" else "srt"
+        val safeExtension = when {
+            extension.equals("vtt", ignoreCase = true) -> "vtt"
+            extension.equals("m3u8", ignoreCase = true) -> "m3u8"
+            else -> "srt"
+        }
         val socket = ensureServer() ?: return null
 
         cleanup()
@@ -429,10 +444,10 @@ private object SubtitleProxy {
                     return
                 }
 
-                val mime = if (item.extension == "vtt") {
-                    "text/vtt; charset=utf-8"
-                } else {
-                    "application/x-subrip; charset=utf-8"
+                val mime = when (item.extension) {
+                    "vtt" -> "text/vtt; charset=utf-8"
+                    "m3u8" -> "application/vnd.apple.mpegurl"
+                    else -> "application/x-subrip; charset=utf-8"
                 }
                 val header = "HTTP/1.1 200 OK\r\n" +
                     "Content-Type: $mime\r\n" +

@@ -15,6 +15,22 @@ val TURKMS_HEADERS = mapOf(
     "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8",
 )
 
+/**
+ * Headers used by ExoPlayer and the downloader.
+ *
+ * The User-Agent is intentionally omitted: CloudStream's player already sets a
+ * current Chrome User-Agent and reads any per-link User-Agent first, so pinning
+ * the plugin's scraping UA here would only make playback look older. The
+ * Accept/Accept-Language pair is added because several Turkish CDNs return
+ * throttled or empty manifests when ExoPlayer sends no Accept header at all.
+ * Per-link headers (for example Twitter's Referer) still win because
+ * [com.turkms.emitLink] merges this map first.
+ */
+val TURKMS_PLAYBACK_HEADERS = mapOf(
+    "Accept" to "*/*",
+    "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8",
+)
+
 suspend fun fetchDocument(
     url: String,
     referer: String? = null,
