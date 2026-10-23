@@ -121,6 +121,55 @@ fun showSettingsDialog(context: Context) {
     }
     layout.addView(providerHint)
 
+    val yearsTitle = TextView(context).apply {
+        text = "Catalog years"
+        textSize = 15f
+        setPadding(0, context.dp(16), 0, context.dp(4))
+    }
+    layout.addView(yearsTitle)
+
+    val yearsHint = TextView(context).apply {
+        text = "Choose the year shown in the movie and series rows. " +
+            "“All years” keeps the complete Turkish catalog. The New and Top " +
+            "rows use the same year."
+        textSize = 11f
+        setTextColor(Color.GRAY)
+        setPadding(0, 0, 0, context.dp(6))
+    }
+    layout.addView(yearsHint)
+
+    val yearValues = TurkMSSettings.catalogYears()
+    val yearLabels = yearValues.map { TurkMSSettings.catalogYearLabel(it) }
+    val movieYearSpinner = Spinner(context).apply {
+        adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, yearLabels)
+        setSelection(yearValues.indexOf(TurkMSSettings.movieYear).coerceAtLeast(0))
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+    }
+    layout.addView(TextView(context).apply {
+        text = "Movies"
+        textSize = 13f
+        setPadding(0, context.dp(4), 0, 0)
+    })
+    layout.addView(movieYearSpinner)
+
+    val seriesYearSpinner = Spinner(context).apply {
+        adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, yearLabels)
+        setSelection(yearValues.indexOf(TurkMSSettings.seriesYear).coerceAtLeast(0))
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+    }
+    layout.addView(TextView(context).apply {
+        text = "Series"
+        textSize = 13f
+        setPadding(0, context.dp(8), 0, 0)
+    })
+    layout.addView(seriesYearSpinner)
+
     val qualityTitle = TextView(context).apply {
         text = "Preferred quality"
         textSize = 15f
@@ -175,6 +224,12 @@ fun showSettingsDialog(context: Context) {
                 wyzieKey = wyzieInput.text.toString(),
                 subdlKey = subdlInput.text.toString(),
                 subsourceKey = subsourceInput.text.toString(),
+                movieYear = yearValues[
+                    movieYearSpinner.selectedItemPosition.coerceIn(yearValues.indices)
+                ],
+                seriesYear = yearValues[
+                    seriesYearSpinner.selectedItemPosition.coerceIn(yearValues.indices)
+                ],
             )
             Toast.makeText(context, "TurkMS settings saved", Toast.LENGTH_SHORT).show()
             dialog.dismiss()

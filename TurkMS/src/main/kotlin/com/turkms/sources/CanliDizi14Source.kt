@@ -12,6 +12,7 @@ import com.turkms.emitLink
 import com.turkms.encode
 import com.turkms.extractFirePlayer
 import com.turkms.extractWithBuiltins
+import com.turkms.extractYoutubeWithFallback
 import com.turkms.fetchDocument
 import com.turkms.firstImage
 import com.turkms.findPlayerIframe
@@ -172,7 +173,7 @@ class CanliDizi14Source : SiteSource() {
         val playerUrl = absoluteUrl(mainUrl, iframe)
         val ytId = youtubeId(playerUrl)
         if (ytId != null) {
-            return extractWithBuiltins("https://www.youtube.com/watch?v=$ytId", url, callback)
+            return extractYoutubeWithFallback(ytId, url, callback)
         }
         if (playerUrl.contains("/fireplayer/video/")) {
             if (extractFirePlayer(playerUrl, url, name, callback)) return true

@@ -43,13 +43,35 @@ class YoutubeProvider : MainAPI() {
     override var lang = "tr"
     override val supportedTypes = setOf(TvType.Movie)
     override val hasMainPage = true
-    override val mainPage = listOf(
-        MainPageData("Turkish Movies", "turkish"),
-        MainPageData("New Turkish Movies", "turkish_new"),
-    )
+    override val mainPage: List<MainPageData>
+        get() {
+            val year = selectedMovieYear()
+            val suffix = if (year == null) " (All Years)" else " · $year"
+            return listOf(
+                MainPageData("Turkish Movies$suffix", "turkish"),
+                MainPageData("New Turkish Movies$suffix", "turkish_new"),
+            )
+        }
+
+    private fun selectedMovieYear(): Int? =
+        TurkMSSettings.movieYear.takeIf { it > 0 }
 
     private fun today(): String =
         java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+
+    private fun currentYear(): Int =
+        java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+
+    private fun yearParams(year: Int?, newest: Boolean): Map<String, String> {
+        if (year == null) {
+            return if (newest) mapOf("release_date.lte" to today()) else emptyMap()
+        }
+        val upper = if (newest && year >= currentYear()) today() else "$year-12-31"
+        return mapOf(
+            "release_date.gte" to "$year-01-01",
+            "release_date.lte" to upper,
+        )
+    }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         if (page > MAX_APP_PAGES) return null
@@ -57,15 +79,18 @@ class YoutubeProvider : MainAPI() {
             "turkish", "turkish_new" -> "/discover/movie"
             else -> return null
         }
+        val selectedYear = selectedMovieYear()
         val params = if (request.data == "turkish_new") {
             mapOf(
                 "with_original_language" to "tr",
                 "sort_by" to "primary_release_date.desc",
                 "vote_count.gte" to "5",
-                "release_date.lte" to today(),
-            )
+            ) + yearParams(selectedYear, newest = true)
         } else {
-            mapOf("with_original_language" to "tr", "sort_by" to "popularity.desc")
+            mapOf(
+                "with_original_language" to "tr",
+                "sort_by" to "popularity.desc",
+            ) + yearParams(selectedYear, newest = false)
         }
 
         val firstPage = (page - 1) * TMDB_PAGES_PER_APP_PAGE + 1

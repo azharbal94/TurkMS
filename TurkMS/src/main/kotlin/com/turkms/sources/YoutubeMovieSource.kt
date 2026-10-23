@@ -7,7 +7,7 @@ import com.turkms.SiteResult
 import com.turkms.SiteSource
 import com.turkms.decode
 import com.turkms.encode
-import com.turkms.extractWithBuiltins
+import com.turkms.extractYoutubeWithFallback
 import com.turkms.fetchText
 import com.turkms.titleScore
 import com.turkms.youtubeId
@@ -101,7 +101,7 @@ class YoutubeMovieSource : SiteSource() {
         callback: suspend (ExtractorLink) -> Unit,
     ): Boolean {
         val id = youtubeId(url) ?: return false
-        return extractWithBuiltins("https://www.youtube.com/watch?v=$id", "$mainUrl/", callback)
+        return extractYoutubeWithFallback(id, "$mainUrl/", callback)
     }
 
     private fun collectVideoRenderers(

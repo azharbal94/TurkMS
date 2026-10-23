@@ -12,6 +12,7 @@ import com.turkms.emitLink
 import com.turkms.encode
 import com.turkms.extractFirePlayer
 import com.turkms.extractWithBuiltins
+import com.turkms.extractYoutubeWithFallback
 import com.turkms.fetchDocument
 import com.turkms.fetchText
 import com.turkms.findPlayerIframe
@@ -138,7 +139,7 @@ class DiziIzleNowSource : SiteSource() {
         if (!youTube.isNullOrBlank()) {
             val id = youtubeId(youTube)
             if (id != null) {
-                return extractWithBuiltins("https://www.youtube.com/watch?v=$id", url, callback)
+                return extractYoutubeWithFallback(id, url, callback)
             }
         }
 

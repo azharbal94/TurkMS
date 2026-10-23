@@ -14,31 +14,43 @@ playback links from third-party sites, and hands them to the player.
   Series, Top Rated Turkish Movies, Top Rated Turkish Series, and Ddizi Latest.
   The TMDB rows use `with_original_language=tr`, so English, Korean, Japanese
   and other productions are not mixed in.
+- **Movie and series years**: Settings → **Catalog years** lets you pin the
+  movie rows and the series rows to different years. **All years** (the
+  default) keeps the full Turkish catalog. The selected year is shown in each
+  row name and applies to the New and Top rows as well.
 - **More than 20 per row**: each TMDB row opens with **60 titles** (three TMDB
   pages per app page) and supports load-more up to six app pages. The Ddizi row
-  shows its latest Turkish series (currently about 28 after foreign titles are
-  filtered out). Other native site providers open with 30–90 cards and keep
-  paginating through the site archive.
+  merges `/yeni-eklenenler8` with the complete `/eski.diziler` archive and pages
+  through it locally. The native site providers open with 30–90 cards and keep
+  paginating through the complete site archive.
 - **Search**: TMDB first; if it returns few results, the scraped sites are
   searched as well.
 - **Detail pages**: poster, backdrop, overview, year, runtime, score, genres,
   cast, trailers, and recommendations.
 - **Episode lists**: seasons and episodes from TMDB, with names, numbers, and
-  stills.
+  stills. Native series pages list every episode, not just the newest ten.
 - **Multi-source playback**: links from several sites are merged, de-duplicated,
   and sorted by quality. Series come from four sites; movies come from YouTube.
   The FirePlayer used by the series sites is read directly, including its
   alternative servers, so one episode can offer several qualities and mirrors.
+- **Working YouTube playback**: YouTube's normal web player is now SABR-only,
+  so the plugin asks the **visionOS InnerTube** client for an adaptive HLS
+  manifest first and falls back to CloudStream's extractor only if that fails.
+  This is used by the YouTube provider, Diziizle, Alıkara-style embeds, and
+  CanlıDizi14's YouTube mirrors.
+- **Ddizi playback fix**: `video.twimg.com` streams use `https://x.com/` as
+  Referer, because the Ddizi page Referer returns 403.
 - **1080p preference**: the quality chosen in settings (1080p by default) is
   moved to the top. Streams without a label are shown as `Unknown` instead of
-  a fake resolution.
+  a fake resolution; adaptive HLS picks the best resolution the device supports.
 - **Arabic subtitles (optional)**: matched by IMDb id (movie, or exact season
   and episode) and offered in the player's subtitle menu. Providers include
   **SubtitleCat** (keyless, direct SRT), **Wyzie Subs** (free key,
   `source=all`), the keyless **OpenSubtitles v3 Stremio addon**, plus optional
   **SubDL** and **SubSource** keys. ZIP/GZIP archives are unpacked and converted
   to UTF-8 SRT/VTT locally, so a packed subtitle still plays. Every result is
-  filtered by title/year and exact SxxExx before it is shown.
+  filtered by title/year and exact SxxExx before it is shown, including episodes
+  opened from a native site provider.
 - **Fast navigation**: site searches, detail pages, and TMDB lookups are cached
   for ten minutes, so switching episodes does not repeat the same requests.
   Subtitle providers are queried in parallel with a 16-second cap.
@@ -54,24 +66,26 @@ Directly scraped sites:
 
 | Key | Site | Content | Player |
 | --- | --- | --- | --- |
-| `canlidizi14` | canlidizi14.net | TV series | YouTube / hlszone / JW Player |
-| `ddizi` | ddizi.tel | TV series | JW Player (Ciner MP4/HLS) |
+| `canlidizi14` | canlidizi14.net | TV series / digital films | YouTube / hlszone / JW Player |
+| `ddizi` | ddizi.tel | TV series | JW Player (Ciner HLS, `video.twimg.com` via x.com) |
 | `diziizlenow` | diziizle.you | TV series | YouTube |
-| `trdiziizle` | trdiziizle.tv | TV series | JW Player / Twitter HLS |
-| `youtube` | youtube.com | Movies | CloudStream YouTube extractor |
+| `trdiziizle` | trdiziizle.tv | TV series | JW Player (googlevideo MP4) |
+| `youtube` | youtube.com | Movies | visionOS InnerTube HLS |
 
 Catalog pagination:
 
 - `canlidizi14` reads `/dizi-arsivi/page/N` (three pages per app page, 30
   cards).
-- `ddizi` reads `/yeni-eklenenler8`, removes the foreign shows listed on
-  `/yabanci-dizi-izle`, and shows the remaining Turkish series (no pagination).
+- `ddizi` merges `/yeni-eklenenler8` with the complete `/eski.diziler` index,
+  removes foreign shows, caches the result for ten minutes, and paginates
+  locally at 90 items per app page.
 - `diziizlenow` reads `/diziler/sayfa-N/` (three pages per app page, 90 cards,
   38 archive pages).
-- `trdiziizle` tries the shared `/dizi-arsivi/page/N` theme paths and falls back
-  to its series section; some networks receive 403 from the site.
+- `trdiziizle` reads the complete `/dizi-arsivi-01/` archive (about 460 series),
+  caches it, and paginates locally at 90 items per app page.
 - TMDB rows fetch three TMDB pages per app page, so a row opens with 60 titles
-  and loads up to 360.
+  and loads up to 360. The movie and series year filters from Settings are sent
+  to TMDB as release/air-date bounds.
 
 Every collected link is also passed through CloudStream's built-in extractor
 library (`loadExtractor`), which understands dozens of hosts such as YouTube,
@@ -87,11 +101,14 @@ therefore uses the **YouTube** source:
 1. The movie's Turkish title is read from TMDB.
 2. YouTube is searched for `"<title> full film türkçe izle"`.
 3. Videos longer than 20 minutes with a matching title are selected.
-4. The `watch?v=...` URL is passed to CloudStream's YouTube extractor.
+4. The watch-page video id is resolved through the visionOS InnerTube player.
+   That client returns an adaptive HLS manifest; CloudStream's built-in
+   extractor is tried second. A raw YouTube watch-page URL is never emitted as a
+   playable stream.
 
-YouTube may refuse some videos due to signature or age restrictions; in that
-case the movie page still opens but the playback list stays empty. That is
-more honest than silently returning a wrong stream.
+YouTube may still refuse some videos due to age, region, or copyright
+restrictions; in that case the movie page still opens but the playback list
+stays empty. That is more honest than silently returning a wrong stream.
 
 ## Installation
 
@@ -131,6 +148,10 @@ Open **Extensions → TurkMS → Settings**:
   personal key at <https://www.themoviedb.org/settings/api>.
 - **Sources**: toggle each of the four series sites and the YouTube movie
   search.
+- **Catalog years**: choose a year for **Movies** and a different year for
+  **Series**. **All years** keeps the complete Turkish catalog. The selected
+  year is reflected in the row names and applies to the regular, New, and Top
+  rows.
 - **Arabic subtitles (optional)**: on by default. Turn it off to skip the
   subtitle lookup entirely.
 - **Wyzie Subs API key**: optional. Get a free key at
@@ -242,8 +263,9 @@ git push -f origin builds
   providers appear under Turkish.
 - **No streams for a series**: the site may be down, geo-blocked, or changed
   its markup. Disable that source and try another.
-- **No streams for a movie**: YouTube extraction failed for that video. Try
-  again later; the plugin never substitutes a wrong link.
+- **No streams for a movie**: YouTube's visionOS client or CloudStream's
+  extractor refused that video (age, region, or copyright). Try again later; the
+  plugin never substitutes a wrong link.
 - **No Arabic subtitles for a title**: subtitles are matched by IMDb id or
   title, and TV results must have the exact season/episode marker. A title that
   TMDB cannot map to IMDb, or one that SubtitleCat/OpenSubtitles does not carry
@@ -262,8 +284,10 @@ git push -f origin builds
   the UTC reset. The keyless fallback keeps working.
 - **TMDB errors**: the demo key is rate-limited. Add a personal key in
   settings.
-- **`trdiziizle.tv` returns 403**: the site blocks some networks/regions. It is
-  not a plugin bug; the source fails gracefully.
+- **`trdiziizle.tv` returns 403**: Cloudflare blocks some networks/regions, and
+  it may occasionally challenge the detail page. The complete archive is still
+  read from `/dizi-arsivi-01/` when Cloudflare allows it. Disable the source if
+  your network is blocked.
 
 ## Project layout
 
@@ -277,6 +301,7 @@ TurkMS/
 │       ├── providers/            # TurkMS + 4 site providers
 │       ├── sources/              # Site scrapers
 │       ├── Tmdb.kt               # TMDB v3 client
+│       ├── YoutubeHls.kt         # visionOS InnerTube → HLS resolver
 │       ├── Subtitles.kt          # SubtitleCat/Wyzie/SubDL/SubSource + matching
 │       ├── SubtitleResolver.kt   # ZIP/GZIP/ASS → SRT + loopback HTTP proxy
 │       ├── FirePlayer.kt         # FirePlayer stream + alternate-server extractor

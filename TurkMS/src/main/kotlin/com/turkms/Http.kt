@@ -1,6 +1,7 @@
 package com.turkms
 
 import com.lagradost.cloudstream3.app
+import com.lagradost.nicehttp.JsonAsString
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
@@ -70,6 +71,21 @@ suspend fun postText(
     ).text
 }.getOrNull()
 
+suspend fun postJsonText(
+    url: String,
+    body: String,
+    referer: String? = null,
+    headers: Map<String, String> = emptyMap(),
+): String? = runCatching {
+    app.post(
+        url,
+        json = JsonAsString(body),
+        headers = TURKMS_HEADERS + headers,
+        referer = referer,
+        timeout = TurkMSSettings.requestTimeout,
+    ).text
+}.getOrNull()
+
 fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")
 
 fun absoluteUrl(base: String, url: String?): String {
@@ -86,8 +102,12 @@ fun absoluteUrl(base: String, url: String?): String {
 fun Element.abs(attr: String, base: String): String =
     absoluteUrl(base, attr(attr).ifBlank { attr("data-src") })
 
-fun Element.firstImage(): String =
-    attr("src").ifBlank { attr("data-src") }.ifBlank { attr("data-lazy-src") }
+fun Element.firstImage(): String {
+    // Most Turkish sites lazy-load cards. The src is then a 1x1 data URI and
+    // the real poster is in data-src/data-lazy-src, so prefer the lazy value.
+    val lazy = attr("data-src").ifBlank { attr("data-lazy-src") }
+    return lazy.ifBlank { attr("src") }
+}
 
 fun String.stripHtml(): String =
     org.jsoup.Jsoup.parse(this).text().replace(Regex("\\s+"), " ").trim()

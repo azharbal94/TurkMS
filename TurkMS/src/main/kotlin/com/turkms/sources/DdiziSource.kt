@@ -8,6 +8,7 @@ import com.turkms.SiteEpisode
 import com.turkms.SiteResult
 import com.turkms.SiteSource
 import com.turkms.absoluteUrl
+import com.turkms.cleanPlayerUrl
 import com.turkms.emitLink
 import com.turkms.extractFirePlayer
 import com.turkms.extractWithBuiltins
@@ -19,6 +20,7 @@ import com.turkms.parseEpisodeNumber
 import com.turkms.parseJwSources
 import com.turkms.parseSeasonNumber
 import com.turkms.postDocument
+import kotlinx.coroutines.withTimeoutOrNull
 
 class DdiziSource : SiteSource() {
     override val key = "ddizi"
@@ -53,24 +55,59 @@ class DdiziSource : SiteSource() {
     }
 
     override suspend fun latest(page: Int): List<SiteResult> {
-        if (page > 1) return emptyList()
-        // The home page only shows ~22 series. /yeni-eklenenler8 is Ddizi's
-        // larger "newly added" index. It mixes Turkish and foreign shows, so
-        // the foreign list is read first and those titles are excluded.
-        val document = fetchDocument("$mainUrl/yeni-eklenenler8")
-            ?: fetchDocument("$mainUrl/")
-            ?: return emptyList()
+        if (page < 1) return emptyList()
+        // Ddizi's "new" page has only ~30 cards, but /eski.diziler contains
+        // the complete Turkish series archive. The native provider pages
+        // through that combined list locally so no title is hidden.
+        val catalog = loadCatalog()
+        if (catalog.isEmpty()) return emptyList()
+        val pageSize = 90
+        return catalog.drop((page - 1) * pageSize).take(pageSize)
+    }
 
-        val foreignUrls = fetchDocument("$mainUrl/yabanci-dizi-izle")
-            ?.select("div.dizi-boxpost a[href*=/diziler/]")
-            ?.mapNotNull { link ->
-                absoluteUrl(mainUrl, link.attr("href")).takeIf { it.isNotBlank() }
-            }
-            ?.toSet()
-            .orEmpty()
+    @Volatile
+    private var catalogCache: Pair<Long, List<SiteResult>>? = null
 
+    private suspend fun loadCatalog(): List<SiteResult> {
+        val now = System.currentTimeMillis()
+        catalogCache?.let { (time, items) ->
+            if (now - time < CATALOG_TTL_MS) return items
+        }
+
+        val latest = withTimeoutOrNull(15_000) { fetchDocument("$mainUrl/yeni-eklenenler8") }
+        val archive = withTimeoutOrNull(15_000) { fetchDocument("$mainUrl/eski.diziler") }
+        if (latest == null && archive == null) return emptyList()
+
+        val foreignUrls = withTimeoutOrNull(10_000) {
+            fetchDocument("$mainUrl/yabanci-dizi-izle")
+                ?.select("div.dizi-boxpost a[href*=/diziler/], div.dizi-boxpost-cat a[href*=/diziler/]")
+                ?.mapNotNull { link ->
+                    absoluteUrl(mainUrl, link.attr("href")).takeIf { it.isNotBlank() }
+                }
+                ?.toSet()
+                .orEmpty()
+        }.orEmpty()
+
+        val items = mutableListOf<SiteResult>()
+        latest?.let { items.addAll(parseLinks(it, foreignUrls)) }
+        archive?.let { items.addAll(parseLinks(it, foreignUrls)) }
+        val deduped = items.distinctBy { it.url }
+        if (deduped.isNotEmpty()) catalogCache = now to deduped
+        return deduped
+    }
+
+    private fun parseLinks(
+        document: org.jsoup.nodes.Document,
+        foreignUrls: Set<String>,
+    ): List<SiteResult> {
         val results = mutableListOf<SiteResult>()
-        for (link in document.select("a[href*=/diziler/]")) {
+        // Card links are parsed before sidebar links so the "Latest" row starts
+        // with actual new episodes; the sidebar on /eski.diziler is the only
+        // complete Turkish-series index the site exposes.
+        val links = document.select(
+            "div.dizi-boxpost-cat a[href*=/diziler/], div.dizi-boxpost a[href*=/diziler/]"
+        ) + document.select("a[href*=/diziler/]")
+        for (link in links) {
             val href = absoluteUrl(mainUrl, link.attr("href"))
             if (href.isBlank()) continue
             if (href in foreignUrls) continue
@@ -82,13 +119,18 @@ class DdiziSource : SiteSource() {
                 .replace(Regex("\\s+"), " ")
                 .trim()
             if (title.isBlank()) continue
-            val poster = link.selectFirst("img")?.firstImage()?.let { absoluteUrl(mainUrl, it) }
+            val container = link.closest("div.dizi-boxpost-cat, div.dizi-boxpost, li")
+            val poster = (container?.selectFirst("img") ?: link.selectFirst("img"))
+                ?.firstImage()
+                ?.let { absoluteUrl(mainUrl, it) }
             results.add(SiteResult(title, href, TvType.TvSeries, null, poster))
         }
-        return results.distinctBy { it.url }.take(80)
+        return results.distinctBy { it.url }
     }
 
     private companion object {
+        const val CATALOG_TTL_MS = 10 * 60 * 1000L
+
         // Fallback if the foreign-list page is temporarily unavailable. These
         // are the non-Turkish series currently present on the latest page.
         val KNOWN_FOREIGN_SLUGS = setOf(
@@ -211,7 +253,9 @@ class DdiziSource : SiteSource() {
             val html = fetchText(playerUrl, url) ?: return false
             val sources = parseJwSources(html)
             if (sources.isNotEmpty()) {
-                for ((file, label, type) in sources) {
+                for ((rawFile, label, type) in sources) {
+                    val file = cleanPlayerUrl(rawFile)
+                    val isTwitter = file.contains("video.twimg.com")
                     emitLink(
                         source = name,
                         label = label,
@@ -221,7 +265,9 @@ class DdiziSource : SiteSource() {
                         } else {
                             ExtractorLinkType.VIDEO
                         },
-                        referer = playerUrl,
+                        // video.twimg.com returns 403 when the Ddizi page is
+                        // used as Referer. x.com (or no Referer) works.
+                        referer = if (isTwitter) "https://x.com/" else playerUrl,
                         callback = callback,
                     )
                 }

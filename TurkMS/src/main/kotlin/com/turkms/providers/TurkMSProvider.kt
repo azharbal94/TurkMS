@@ -22,14 +22,17 @@ import com.turkms.AggRequest
 import com.turkms.ArabicSubtitles
 import com.turkms.SiteResult
 import com.turkms.SiteSource
+import com.turkms.SiteEpisodeData
 import com.turkms.TmdbClient
 import com.turkms.TmdbItem
 import com.turkms.TurkMSCache
 import com.turkms.TurkMSSettings
 import com.turkms.buildAggData
+import com.turkms.buildSiteEpisodeData
 import com.turkms.buildSiteUrl
 import com.turkms.normalizeTitle
 import com.turkms.parseAggData
+import com.turkms.parseSiteEpisodeData
 import com.turkms.parseSiteUrl
 import com.turkms.parseYear
 import com.turkms.sortForPreferredQuality
@@ -66,20 +69,55 @@ class TurkMSProvider : MainAPI() {
 
     // Every row is Turkish-only. Movies and series each get their own rows so
     // the home page never mixes in English, Korean, Japanese or other content.
-    override val mainPage = listOf(
-        MainPageData("Turkish Movies", "tr_movies"),
-        MainPageData("Turkish Series", "tr_series"),
-        MainPageData("New Turkish Movies", "tr_movies_new"),
-        MainPageData("New Turkish Series", "tr_series_new"),
-        MainPageData("Top Rated Turkish Movies", "tr_movies_top"),
-        MainPageData("Top Rated Turkish Series", "tr_series_top"),
-        // The Ddizi site has no TMDB metadata, but its own latest list is a
-        // useful, visible discovery row on the main page.
-        MainPageData("Ddizi Latest", "ddizi_latest"),
-    )
+    // The year is read dynamically so changing it in settings immediately
+    // updates the row names and filters on the next catalog refresh.
+    override val mainPage: List<MainPageData>
+        get() {
+            val movieYear = selectedMovieYear()
+            val seriesYear = selectedSeriesYear()
+            return listOf(
+                MainPageData(rowName("Turkish Movies", movieYear), "tr_movies"),
+                MainPageData(rowName("Turkish Series", seriesYear), "tr_series"),
+                MainPageData(rowName("New Turkish Movies", movieYear), "tr_movies_new"),
+                MainPageData(rowName("New Turkish Series", seriesYear), "tr_series_new"),
+                MainPageData(rowName("Top Rated Turkish Movies", movieYear), "tr_movies_top"),
+                MainPageData(rowName("Top Rated Turkish Series", seriesYear), "tr_series_top"),
+                // The Ddizi site has no TMDB metadata, but its own latest list is a
+                // useful, visible discovery row on the main page.
+                MainPageData("Ddizi Latest", "ddizi_latest"),
+            )
+        }
+
+    private fun selectedMovieYear(): Int? =
+        TurkMSSettings.movieYear.takeIf { it > 0 }
+
+    private fun selectedSeriesYear(): Int? =
+        TurkMSSettings.seriesYear.takeIf { it > 0 }
+
+    private fun rowName(base: String, year: Int?): String =
+        if (year == null) "$base (All Years)" else "$base · $year"
 
     private fun today(): String =
         java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+
+    private fun currentYear(): Int =
+        java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+
+    /**
+     * TMDB date filters for the selected year. `newest` rows also exclude
+     * future dates when the selected year is the current one.
+     */
+    private fun yearParams(year: Int?, isTv: Boolean, newest: Boolean = false): Map<String, String> {
+        val dateField = if (isTv) "first_air_date" else "release_date"
+        if (year == null) {
+            return if (newest) mapOf("$dateField.lte" to today()) else emptyMap()
+        }
+        val upper = if (newest && year >= currentYear()) today() else "$year-12-31"
+        return mapOf(
+            "$dateField.gte" to "$year-01-01",
+            "$dateField.lte" to upper,
+        )
+    }
 
     private fun allSources(): List<SiteSource> = listOf(
         CanliDizi14Source(),
@@ -105,57 +143,71 @@ class TurkMSProvider : MainAPI() {
             if (!TurkMSSettings.sourceDdizi) {
                 return newHomePageResponse(request, emptyList(), hasNext = false)
             }
-            val items = runCatching { DdiziSource().latest(page) }
-                .getOrDefault(emptyList())
+            val items = runCatching {
+                withTimeoutOrNull(45_000) { DdiziSource().latest(page) }.orEmpty()
+            }.getOrDefault(emptyList())
             val list = items.map { it.toSiteSearchResponse("ddizi") }
             return newHomePageResponse(
                 request,
                 list,
-                // /yeni-eklenenler8 is a single page, so do not offer a
-                // load-more action that would always return nothing.
-                hasNext = false,
+                // Ddizi's new and archive catalogs are merged and locally
+                // paginated by DdiziSource.
+                hasNext = list.size >= 10,
             )
         }
 
         if (page > MAX_APP_PAGES) return null
 
+        val movieYear = selectedMovieYear()
+        val seriesYear = selectedSeriesYear()
         val (path, params) = when (request.data) {
             // with_original_language=tr keeps the catalogs Turkish-only, instead of
-            // mixing in whatever happens to be popular worldwide.
-            "tr_movies" -> "/discover/movie" to mapOf(
-                "with_original_language" to "tr",
-                "sort_by" to "popularity.desc",
+            // mixing in whatever happens to be popular worldwide. The year
+            // filters are applied to every movie/series row.
+            "tr_movies" -> "/discover/movie" to (
+                mapOf(
+                    "with_original_language" to "tr",
+                    "sort_by" to "popularity.desc",
+                ) + yearParams(movieYear, isTv = false)
             )
 
-            "tr_series" -> "/discover/tv" to mapOf(
-                "with_original_language" to "tr",
-                "sort_by" to "popularity.desc",
+            "tr_series" -> "/discover/tv" to (
+                mapOf(
+                    "with_original_language" to "tr",
+                    "sort_by" to "popularity.desc",
+                ) + yearParams(seriesYear, isTv = true)
             )
 
-            "tr_movies_new" -> "/discover/movie" to mapOf(
-                "with_original_language" to "tr",
-                "sort_by" to "primary_release_date.desc",
-                "vote_count.gte" to "5",
-                "release_date.lte" to today(),
+            "tr_movies_new" -> "/discover/movie" to (
+                mapOf(
+                    "with_original_language" to "tr",
+                    "sort_by" to "primary_release_date.desc",
+                    "vote_count.gte" to "5",
+                ) + yearParams(movieYear, isTv = false, newest = true)
             )
 
-            "tr_series_new" -> "/discover/tv" to mapOf(
-                "with_original_language" to "tr",
-                "sort_by" to "first_air_date.desc",
-                "vote_count.gte" to "5",
-                "first_air_date.lte" to today(),
+            "tr_series_new" -> "/discover/tv" to (
+                mapOf(
+                    "with_original_language" to "tr",
+                    "sort_by" to "first_air_date.desc",
+                    "vote_count.gte" to "5",
+                ) + yearParams(seriesYear, isTv = true, newest = true)
             )
 
-            "tr_movies_top" -> "/discover/movie" to mapOf(
-                "with_original_language" to "tr",
-                "sort_by" to "vote_average.desc",
-                "vote_count.gte" to "100",
+            "tr_movies_top" -> "/discover/movie" to (
+                mapOf(
+                    "with_original_language" to "tr",
+                    "sort_by" to "vote_average.desc",
+                    "vote_count.gte" to "100",
+                ) + yearParams(movieYear, isTv = false)
             )
 
-            "tr_series_top" -> "/discover/tv" to mapOf(
-                "with_original_language" to "tr",
-                "sort_by" to "vote_average.desc",
-                "vote_count.gte" to "100",
+            "tr_series_top" -> "/discover/tv" to (
+                mapOf(
+                    "with_original_language" to "tr",
+                    "sort_by" to "vote_average.desc",
+                    "vote_count.gte" to "100",
+                ) + yearParams(seriesYear, isTv = true)
             )
 
             else -> return null
@@ -264,7 +316,9 @@ class TurkMSProvider : MainAPI() {
             return details.toLoadResponse(
                 this,
                 movieDataUrl = buildSiteUrl(source.key, details.url),
-                episodeData = { episode -> buildSiteUrl(source.key, episode.url) },
+                episodeData = { episode ->
+                    buildSiteEpisodeData(source.key, episode, details.name, details.year)
+                },
             )
         }
 
@@ -389,12 +443,51 @@ class TurkMSProvider : MainAPI() {
         }
     }
 
+    private suspend fun addSiteSubtitles(
+        meta: SiteEpisodeData,
+        subtitleCallback: (SubtitleFile) -> Unit,
+    ) {
+        if (!TurkMSSettings.arabicSubtitles) return
+        runCatching {
+            val imdb = withTimeoutOrNull(10_000) {
+                TmdbClient.resolveImdb(
+                    title = meta.title,
+                    originalTitle = null,
+                    year = meta.year,
+                    isTv = true,
+                )
+            }
+            ArabicSubtitles.find(
+                imdbId = imdb,
+                title = meta.title,
+                year = meta.year,
+                isTv = true,
+                season = meta.season,
+                episode = meta.episode,
+            ).forEach(subtitleCallback)
+        }
+    }
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit,
     ): Boolean {
+        if (data.startsWith("turkms://site-ep?")) {
+            val meta = parseSiteEpisodeData(data) ?: return false
+            val source = enabledSources().firstOrNull { it.key == meta.key }
+                ?: allSources().firstOrNull { it.key == meta.key }
+                ?: return false
+            var found = false
+            source.loadLinks(meta.url) {
+                found = true
+                callback(it)
+            }
+            addSiteSubtitles(meta, subtitleCallback)
+            return found
+        }
+
         if (data.startsWith("turkms://site?")) {
             val parts = parseSiteUrl(data) ?: return false
             val source = enabledSources().firstOrNull { it.key == parts.key }

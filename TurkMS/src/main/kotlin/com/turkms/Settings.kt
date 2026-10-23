@@ -21,6 +21,8 @@ object TurkMSSettings {
     private const val KEY_WYZIE = "wyzie_api_key"
     private const val KEY_SUBDL = "subdl_api_key"
     private const val KEY_SUBSOURCE = "subsource_api_key"
+    private const val KEY_MOVIE_YEAR = "movie_catalog_year"
+    private const val KEY_SERIES_YEAR = "series_catalog_year"
 
     /** Public demo key. A personal TMDB v3 key can be entered in the plugin settings. */
     const val FALLBACK_TMDB_KEY = "4e44d9029b1270a757cddc766a1bcb63"
@@ -37,6 +39,9 @@ object TurkMSSettings {
     var wyzieApiKey: String = ""
     var subdlApiKey: String = ""
     var subsourceApiKey: String = ""
+    /** 0 means "all years"; any other value limits the relevant catalog rows. */
+    var movieYear: Int = 0
+    var seriesYear: Int = 0
 
     private var prefs: SharedPreferences? = null
 
@@ -55,6 +60,8 @@ object TurkMSSettings {
         wyzieApiKey = p.getString(KEY_WYZIE, "") ?: ""
         subdlApiKey = p.getString(KEY_SUBDL, "") ?: ""
         subsourceApiKey = p.getString(KEY_SUBSOURCE, "") ?: ""
+        movieYear = p.getInt(KEY_MOVIE_YEAR, 0)
+        seriesYear = p.getInt(KEY_SERIES_YEAR, 0)
     }
 
     fun save(
@@ -71,6 +78,8 @@ object TurkMSSettings {
         wyzieKey: String,
         subdlKey: String = "",
         subsourceKey: String = "",
+        movieYear: Int = 0,
+        seriesYear: Int = 0,
     ) {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         p.edit()
@@ -86,6 +95,8 @@ object TurkMSSettings {
             .putString(KEY_WYZIE, wyzieKey.trim())
             .putString(KEY_SUBDL, subdlKey.trim())
             .putString(KEY_SUBSOURCE, subsourceKey.trim())
+            .putInt(KEY_MOVIE_YEAR, movieYear)
+            .putInt(KEY_SERIES_YEAR, seriesYear)
             .apply()
         prefs = p
         tmdbApiKey = tmdbKey.trim()
@@ -100,7 +111,18 @@ object TurkMSSettings {
         wyzieApiKey = wyzieKey.trim()
         subdlApiKey = subdlKey.trim()
         subsourceApiKey = subsourceKey.trim()
+        this.movieYear = movieYear
+        this.seriesYear = seriesYear
     }
+
+    /** Catalog year choices, newest first. 0 means "all years". */
+    fun catalogYears(): List<Int> {
+        val current = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+        return listOf(0) + (current downTo 1950).toList()
+    }
+
+    fun catalogYearLabel(year: Int): String =
+        if (year <= 0) "All years" else year.toString()
 
     fun effectiveTmdbKey(): String = tmdbApiKey.ifBlank { FALLBACK_TMDB_KEY }
 }

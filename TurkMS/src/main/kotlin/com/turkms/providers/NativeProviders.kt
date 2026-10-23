@@ -11,9 +11,12 @@ import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.turkms.ArabicSubtitles
+import com.turkms.SiteEpisodeData
 import com.turkms.SiteSource
 import com.turkms.TmdbClient
 import com.turkms.TurkMSSettings
+import com.turkms.buildSiteEpisodeData
+import com.turkms.parseSiteEpisodeData
 import com.turkms.sources.CanliDizi14Source
 import com.turkms.sources.DdiziSource
 import com.turkms.sources.DiziIzleNowSource
@@ -37,13 +40,13 @@ abstract class BaseSiteProvider(private val site: SiteSource) : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         if (request.data != "latest") return null
         // A dead or blocking site must not take the whole home screen down.
-        val items = runCatching { site.latest(page) }
-            .getOrDefault(emptyList())
+        val items = runCatching {
+            withTimeoutOrNull(45_000) { site.latest(page) }.orEmpty()
+        }.getOrDefault(emptyList())
             .map { it.toSearchResponse(this) }
         // Sites return 30-90 cards per app page. A short page means the site's
-        // archive is exhausted, so the client can stop asking for more. Ddizi
-        // exposes a single latest page, so it never has a next page.
-        val hasNext = site.key != "ddizi" && items.size >= 10
+        // archive is exhausted, so the client can stop asking for more.
+        val hasNext = items.size >= 10
         return newHomePageResponse(request, items, hasNext = hasNext)
     }
 
@@ -52,7 +55,14 @@ abstract class BaseSiteProvider(private val site: SiteSource) : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse? {
-        return site.details(url)?.toLoadResponse(this)
+        val details = site.details(url) ?: return null
+        return details.toLoadResponse(
+            this,
+            movieDataUrl = url,
+            episodeData = { episode ->
+                buildSiteEpisodeData(site.key, episode, details.name, details.year)
+            },
+        )
     }
 
     override suspend fun loadLinks(
@@ -61,11 +71,42 @@ abstract class BaseSiteProvider(private val site: SiteSource) : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit,
     ): Boolean {
+        val meta = parseSiteEpisodeData(data)
+        val target = meta?.url ?: data
         val links = mutableListOf<ExtractorLink>()
-        site.loadLinks(data) { links.add(it) }
+        site.loadLinks(target) { links.add(it) }
         for (link in links.sortForPreferredQuality()) callback(link)
-        addArabicSubtitles(data, subtitleCallback)
+        if (meta != null) {
+            addArabicSubtitles(meta, subtitleCallback)
+        } else {
+            addArabicSubtitles(target, subtitleCallback)
+        }
         return links.isNotEmpty()
+    }
+
+    private suspend fun addArabicSubtitles(
+        meta: SiteEpisodeData,
+        subtitleCallback: (SubtitleFile) -> Unit,
+    ) {
+        if (!TurkMSSettings.arabicSubtitles) return
+        runCatching {
+            val imdb = withTimeoutOrNull(10_000) {
+                TmdbClient.resolveImdb(
+                    title = meta.title,
+                    originalTitle = null,
+                    year = meta.year,
+                    isTv = true,
+                )
+            }
+            ArabicSubtitles.find(
+                imdbId = imdb,
+                title = meta.title,
+                year = meta.year,
+                isTv = true,
+                season = meta.season,
+                episode = meta.episode,
+            ).forEach(subtitleCallback)
+        }
     }
 
     private suspend fun addArabicSubtitles(

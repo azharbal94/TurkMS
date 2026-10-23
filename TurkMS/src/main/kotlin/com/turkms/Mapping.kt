@@ -70,6 +70,48 @@ fun buildSiteUrl(sourceKey: String, url: String): String =
 
 data class SiteUrlParts(val key: String, val url: String)
 
+data class SiteEpisodeData(
+    val key: String,
+    val url: String,
+    val title: String,
+    val year: Int?,
+    val season: Int?,
+    val episode: Int?,
+)
+
+/**
+ * Native-site episodes are passed back to loadLinks as a data URL. Keeping the
+ * series title and season/episode here lets the subtitle resolver match the
+ * exact episode instead of guessing from a bare episode URL.
+ */
+fun buildSiteEpisodeData(
+    sourceKey: String,
+    episode: SiteEpisode,
+    seriesTitle: String,
+    seriesYear: Int?,
+): String = "turkms://site-ep?key=${encode(sourceKey)}" +
+    "&url=${encode(episode.url)}" +
+    "&title=${encode(seriesTitle)}" +
+    "&year=${seriesYear ?: 0}" +
+    "&season=${episode.season ?: 0}" +
+    "&episode=${episode.episode ?: 0}"
+
+fun parseSiteEpisodeData(data: String): SiteEpisodeData? {
+    if (!data.startsWith("turkms://site-ep?")) return null
+    val params = parseQuery(data)
+    val key = params["key"] ?: return null
+    val url = params["url"] ?: return null
+    val title = params["title"]?.takeIf { it.isNotBlank() } ?: return null
+    return SiteEpisodeData(
+        key = key,
+        url = url,
+        title = title,
+        year = params["year"]?.toIntOrNull()?.takeIf { it > 0 },
+        season = params["season"]?.toIntOrNull()?.takeIf { it > 0 },
+        episode = params["episode"]?.toIntOrNull()?.takeIf { it > 0 },
+    )
+}
+
 fun parseSiteUrl(data: String): SiteUrlParts? {
     if (!data.startsWith("turkms://site?")) return null
     val params = parseQuery(data)

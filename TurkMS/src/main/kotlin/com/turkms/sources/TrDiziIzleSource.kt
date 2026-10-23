@@ -8,9 +8,9 @@ import com.turkms.SiteEpisode
 import com.turkms.SiteResult
 import com.turkms.SiteSource
 import com.turkms.absoluteUrl
+import com.turkms.cleanPlayerUrl
 import com.turkms.emitLink
 import com.turkms.encode
-import com.turkms.extractFirePlayer
 import com.turkms.extractWithBuiltins
 import com.turkms.fetchDocument
 import com.turkms.fetchText
@@ -18,9 +18,9 @@ import com.turkms.findPlayerIframe
 import com.turkms.firstImage
 import com.turkms.parseEpisodeNumber
 import com.turkms.parseJwSources
-import kotlinx.coroutines.withTimeoutOrNull
 import com.turkms.parseSeasonNumber
 import com.turkms.parseYear
+import kotlinx.coroutines.withTimeoutOrNull
 
 class TrDiziIzleSource : SiteSource() {
     override val key = "trdiziizle"
@@ -33,51 +33,66 @@ class TrDiziIzleSource : SiteSource() {
     }
 
     override suspend fun latest(page: Int): List<SiteResult> {
-        // Same WordPress theme as canlidizi14. The site blocks some networks,
-        // so each page tries the series section, the shared archive pattern and
-        // finally the home page. If a whole page fails, stop asking for more.
-        val firstPage = (page - 1) * 3 + 1
-        val results = mutableListOf<SiteResult>()
-        for (archivePage in firstPage until firstPage + 3) {
-            val candidates = if (archivePage == 1) {
-                listOf(
-                    "$mainUrl/kategori/e/",
-                    "$mainUrl/dizi-arsivi/",
-                    "$mainUrl/",
-                )
-            } else {
-                listOf(
-                    "$mainUrl/kategori/e/page/$archivePage/",
-                    "$mainUrl/dizi-arsivi/page/$archivePage",
-                )
-            }.distinct()
+        if (page < 1) return emptyList()
+        // The site now uses the /tr2/ theme. Its complete series list is on
+        // /dizi-arsivi-01/ (one large page, no numbered archive). Cache it and
+        // paginate locally so every series is reachable through load-more.
+        val all = loadArchive()
+        if (all.isEmpty()) return emptyList()
+        val pageSize = 90
+        return all.drop((page - 1) * pageSize).take(pageSize)
+    }
 
-            var found = false
-            for (url in candidates) {
-                // The site is unreachable on some networks; do not let three
-                // failed candidates hold the home screen for a full minute.
-                val document = withTimeoutOrNull(6_000) { fetchDocument(url) } ?: continue
-                val cards = parseCards(document)
-                if (cards.isNotEmpty()) {
-                    results.addAll(cards)
-                    found = true
-                    break
-                }
-            }
-            if (!found) break
+    @Volatile
+    private var archiveCache: Pair<Long, List<SiteResult>>? = null
+
+    private suspend fun loadArchive(): List<SiteResult> {
+        val now = System.currentTimeMillis()
+        archiveCache?.let { (time, items) ->
+            if (now - time < ARCHIVE_TTL_MS) return items
         }
-        return results.distinctBy { it.url }
+        val document = withTimeoutOrNull(25_000) {
+            fetchDocument("$mainUrl/dizi-arsivi-01/")
+        } ?: withTimeoutOrNull(15_000) { fetchDocument("$mainUrl/") }
+            ?: return emptyList()
+        val items = parseCards(document)
+        if (items.isNotEmpty()) archiveCache = now to items
+        return items
     }
 
     private fun parseCards(document: org.jsoup.nodes.Document): List<SiteResult> {
         val results = mutableListOf<SiteResult>()
+
+        // New /tr2/ home and category cards.
+        for (item in document.select("div#list-series-main")) {
+            val link = item.selectFirst("div.cat-title-main a[href]") ?: continue
+            val href = absoluteUrl(mainUrl, link.attr("href"))
+            if (href.isBlank()) continue
+            val title = link.text().replace(Regex("\\s+"), " ").trim()
+            if (title.isBlank()) continue
+            val poster = item.selectFirst("div.cat-img-main img")?.firstImage()
+                ?.let { absoluteUrl(mainUrl, it) }
+            val yearText = item.selectFirst("div.cat-title-main")?.text() ?: item.text()
+            results.add(
+                SiteResult(
+                    name = title,
+                    url = href,
+                    type = if (href.contains("/film")) TvType.Movie else TvType.TvSeries,
+                    year = parseYear(yearText),
+                    poster = poster,
+                )
+            )
+        }
+
+        // Archive and search pages still use the old single-item layout.
         for (item in document.select("div.single-item")) {
-            val link = item.selectFirst("div.categorytitle a, div.cat-title a") ?: continue
+            val link = item.selectFirst("div.cat-title a[href], div.categorytitle a[href]")
+                ?: continue
             val href = absoluteUrl(mainUrl, link.attr("href"))
             if (href.isBlank()) continue
             val title = link.text().ifBlank {
                 item.selectFirst("div.cat-img img")?.attr("alt") ?: ""
-            }
+            }.replace(Regex("\\s+"), " ").trim()
             if (title.isBlank()) continue
             val poster = item.selectFirst("div.cat-img img")?.firstImage()
                 ?.let { absoluteUrl(mainUrl, it) }
@@ -85,7 +100,7 @@ class TrDiziIzleSource : SiteSource() {
                 SiteResult(
                     name = title,
                     url = href,
-                    type = if (href.contains("/diziler/")) TvType.TvSeries else TvType.Movie,
+                    type = if (href.contains("/film")) TvType.Movie else TvType.TvSeries,
                     year = parseYear(item.text()),
                     poster = poster,
                 )
@@ -100,6 +115,7 @@ class TrDiziIzleSource : SiteSource() {
         val isSeries = url.contains("/diziler/") || episodes.isNotEmpty()
 
         val title = document.selectFirst("h1")?.text()
+            ?.substringBefore("|")
             ?.replace(Regex("(?i)\\s+son\\s+b[oö]l[uü]m\\s+izle.*$"), "")
             ?.replace(Regex("(?i)\\s+izle\\s*$"), "")
             ?.trim()
@@ -149,11 +165,12 @@ class TrDiziIzleSource : SiteSource() {
         val seen = mutableSetOf<String>()
         val result = mutableListOf<SiteEpisode>()
         for (anchor in anchors) {
+            // The theme adds a "wpfp" add-to-favorites anchor before the real
+            // episode link. Only the episode link contains div.baslik.
+            val labelElement = anchor.selectFirst("div.baslik") ?: continue
             val href = absoluteUrl(mainUrl, anchor.attr("href"))
             if (href.isBlank() || !seen.add(href)) continue
-            val label = anchor.selectFirst("div.baslik")?.text()
-                ?: anchor.attr("title").ifBlank { anchor.text() }
-            val name = label.replace(Regex("\\s+"), " ").trim()
+            val name = labelElement.text().replace(Regex("\\s+"), " ").trim()
             if (name.isBlank()) continue
             result.add(
                 SiteEpisode(
@@ -174,30 +191,38 @@ class TrDiziIzleSource : SiteSource() {
         val document = fetchDocument(url) ?: return false
         val iframe = findPlayerIframe(document) ?: return false
         val playerUrl = absoluteUrl(mainUrl, iframe)
-        if (playerUrl.contains("/fireplayer/video/")) {
-            if (extractFirePlayer(playerUrl, url, name, callback)) return true
-        }
+
         if (playerUrl.contains("/player/oynat/")) {
-            val html = fetchText(playerUrl, url) ?: return false
-            val sources = parseJwSources(html)
-            if (sources.isNotEmpty()) {
-                for ((file, label, type) in sources) {
-                    emitLink(
-                        source = name,
-                        label = label,
-                        url = absoluteUrl(playerUrl, file),
-                        type = if (type.contains("hls") || file.contains(".m3u8")) {
-                            ExtractorLinkType.M3U8
-                        } else {
-                            ExtractorLinkType.VIDEO
-                        },
-                        referer = playerUrl,
-                        callback = callback,
-                    )
+            val html = fetchText(playerUrl, url)
+            if (html != null) {
+                val sources = parseJwSources(html)
+                if (sources.isNotEmpty()) {
+                    for ((rawFile, label, type) in sources) {
+                        val file = cleanPlayerUrl(rawFile)
+                        val isGoogle = file.contains("googlevideo.com")
+                        emitLink(
+                            source = name,
+                            label = label,
+                            url = absoluteUrl(playerUrl, file),
+                            type = if (type.contains("hls") || file.contains(".m3u8")) {
+                                ExtractorLinkType.M3U8
+                            } else {
+                                ExtractorLinkType.VIDEO
+                            },
+                            // googlevideo URLs are signed and do not need the
+                            // site Referer; sending it can trigger a 403.
+                            referer = if (isGoogle) "https://www.youtube.com/" else playerUrl,
+                            callback = callback,
+                        )
+                    }
+                    return true
                 }
-                return true
             }
         }
         return extractWithBuiltins(playerUrl, url, callback)
+    }
+
+    private companion object {
+        const val ARCHIVE_TTL_MS = 10 * 60 * 1000L
     }
 }

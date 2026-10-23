@@ -150,6 +150,14 @@ fun findPlayerIframe(document: org.jsoup.nodes.Document): String? {
     }.ifBlank { null }
 }
 
+/** JW Player pages often contain JSON-escaped slashes in stream URLs. */
+fun cleanPlayerUrl(value: String): String =
+    value.replace("\\/", "/")
+        .replace("\\u0026", "&", ignoreCase = true)
+        .replace("\\u003d", "=", ignoreCase = true)
+        .replace("\\u003f", "?", ignoreCase = true)
+        .replace("\\u002f", "/", ignoreCase = true)
+
 /** Extracts a YouTube video id from all common embed shapes. */
 fun youtubeId(url: String): String? {
     if (url.isBlank()) return null
@@ -166,20 +174,38 @@ fun youtubeId(url: String): String? {
     return null
 }
 
-/** Parses a JW Player `sources: [{file:"...", label:"1080p", type:"mp4"}]` array. */
+/**
+ * Parses a JW Player source object.
+ *
+ * Players are inconsistent: Ddizi emits `{file, label, type}` while
+ * trdiziizle (and several mirrors) emit only `{file}`. Requiring `label`
+ * silently broke every trdiziizle stream, so all keys are optional here.
+ */
 fun parseJwSources(html: String): List<Triple<String, String, String>> {
     val results = mutableListOf<Triple<String, String, String>>()
     val objectRegex = Regex(
-        """\{\s*file\s*:\s*["']([^"']+)["']\s*,\s*label\s*:\s*["']([^"']*)["'](?:[^}]*?type\s*:\s*["']([^"']*)["'])?""",
+        """\{[^{}]*?file\s*:\s*["']([^"']+)["'][^{}]*\}""",
         RegexOption.IGNORE_CASE
     )
     for (match in objectRegex.findAll(html)) {
+        val block = match.value
         val file = match.groupValues[1]
-        val label = match.groupValues[2].ifBlank { "auto" }
-        val type = match.groupValues[3].ifBlank {
-            if (file.contains(".m3u8")) "hls" else "mp4"
-        }
+        val label = Regex("""label\s*:\s*["']([^"']*)["']""", RegexOption.IGNORE_CASE)
+            .find(block)?.groupValues?.getOrNull(1).orEmpty().ifBlank { "auto" }
+        val type = Regex("""type\s*:\s*["']([^"']*)["']""", RegexOption.IGNORE_CASE)
+            .find(block)?.groupValues?.getOrNull(1).orEmpty().ifBlank {
+                if (file.contains(".m3u8")) "hls" else "mp4"
+            }
         results.add(Triple(file, label, type))
+    }
+    if (results.isNotEmpty()) return results
+
+    // Last-resort support for a bare `file: "..."` declaration.
+    val fileRegex = Regex("""file\s*:\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+    for (match in fileRegex.findAll(html)) {
+        val file = match.groupValues[1]
+        val type = if (file.contains(".m3u8")) "hls" else "mp4"
+        results.add(Triple(file, "auto", type))
     }
     return results
 }
