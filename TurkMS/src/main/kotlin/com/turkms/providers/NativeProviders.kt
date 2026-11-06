@@ -19,8 +19,11 @@ import com.turkms.buildSiteEpisodeData
 import com.turkms.parseSiteEpisodeData
 import com.turkms.sources.CanliDizi14Source
 import com.turkms.sources.DdiziSource
+import com.turkms.sources.DiziabiSource
 import com.turkms.sources.DiziIzleNowSource
+import com.turkms.sources.DizimolySource
 import com.turkms.sources.TrDiziIzleSource
+import com.turkms.sources.TvDizilerSource
 import com.turkms.sortForPreferredQuality
 import com.turkms.toLoadResponse
 import com.turkms.toSearchResponse
@@ -142,3 +145,6 @@ class CanliDizi14Provider : BaseSiteProvider(CanliDizi14Source())
 class DdiziProvider : BaseSiteProvider(DdiziSource())
 class DiziIzleNowProvider : BaseSiteProvider(DiziIzleNowSource())
 class TrDiziIzleProvider : BaseSiteProvider(TrDiziIzleSource())
+class DizimolyProvider : BaseSiteProvider(DizimolySource())
+class DiziabiProvider : BaseSiteProvider(DiziabiSource())
+class TvDizilerProvider : BaseSiteProvider(TvDizilerSource())

@@ -37,9 +37,13 @@ import com.turkms.parseSiteUrl
 import com.turkms.parseYear
 import com.turkms.sortForPreferredQuality
 import com.turkms.sources.CanliDizi14Source
+import com.turkms.sources.DailymotionSource
 import com.turkms.sources.DdiziSource
+import com.turkms.sources.DiziabiSource
 import com.turkms.sources.DiziIzleNowSource
+import com.turkms.sources.DizimolySource
 import com.turkms.sources.TrDiziIzleSource
+import com.turkms.sources.TvDizilerSource
 import com.turkms.sources.YoutubeMovieSource
 import com.turkms.titleScore
 import com.turkms.toLoadResponse
@@ -134,6 +138,10 @@ class TurkMSProvider : MainAPI() {
         DdiziSource(),
         DiziIzleNowSource(),
         TrDiziIzleSource(),
+        DizimolySource(),
+        DiziabiSource(),
+        TvDizilerSource(),
+        DailymotionSource(),
         YoutubeMovieSource(),
     )
 
@@ -143,6 +151,10 @@ class TurkMSProvider : MainAPI() {
             "ddizi" -> TurkMSSettings.sourceDdizi
             "diziizlenow" -> TurkMSSettings.sourceDiziIzleNow
             "trdiziizle" -> TurkMSSettings.sourceTrDiziIzle
+            "dizimoly" -> TurkMSSettings.sourceDizimoly
+            "diziabi" -> TurkMSSettings.sourceDiziabi
+            "tvdiziler" -> TurkMSSettings.sourceTvDiziler
+            "dailymotion" -> TurkMSSettings.sourceDailymotion
             "youtube" -> TurkMSSettings.sourceYoutube
             else -> false
         }
@@ -280,9 +292,9 @@ class TurkMSProvider : MainAPI() {
 
     private suspend fun searchSites(query: String): List<SearchResponse> {
         val hits: List<Pair<SiteSource, SiteResult>> = coroutineScope {
-            // Plain search stays on the series sites; YouTube is a movie-playback
-            // fallback and would only add noisy results here.
-            enabledSources().filter { it.key != "youtube" }.map { source ->
+            // Plain search stays on the series sites; YouTube and Dailymotion
+            // are movie-playback fallbacks and would only add noisy results.
+            enabledSources().filter { it.key != "youtube" && it.key != "dailymotion" }.map { source ->
                 async {
                     val results = runCatching {
                         withTimeoutOrNull(15_000) {
@@ -608,8 +620,11 @@ class TurkMSProvider : MainAPI() {
     }
 
     private suspend fun collectFromSource(source: SiteSource, request: AggRequest): List<ExtractorLink> {
-        // YouTube only carries films we care about; keep it out of episode lookups.
-        if (request.season != null && source.key == "youtube") return emptyList()
+        // YouTube and Dailymotion only carry films we care about; keep them out
+        // of episode lookups.
+        if (request.season != null && (source.key == "youtube" || source.key == "dailymotion")) {
+            return emptyList()
+        }
 
         val queries = listOfNotNull(request.title, request.originalTitle)
             .map { it.trim() }

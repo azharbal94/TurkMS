@@ -21,7 +21,7 @@ playback links from third-party sites, and hands them to the player.
 - **More than 20 per row**: each TMDB row opens with **60 titles** (three TMDB
   pages per app page) and supports load-more up to six app pages. The Ddizi row
   merges `/yeni-eklenenler8` with the complete `/eski.diziler` archive and pages
-  through it locally. The native site providers open with 30–90 cards and keep
+  through it locally. The native site providers open with 24–90 cards and keep
   paginating through the complete site archive.
 - **Search**: TMDB first; if it returns few results, the scraped sites are
   searched as well.
@@ -30,9 +30,10 @@ playback links from third-party sites, and hands them to the player.
 - **Episode lists**: seasons and episodes from TMDB, with names, numbers, and
   stills. Native series pages list every episode, not just the newest ten.
 - **Multi-source playback**: links from several sites are merged, de-duplicated,
-  and sorted by quality. Series come from four sites; movies come from YouTube.
-  The FirePlayer used by the series sites is read directly, including its
-  alternative servers, so one episode can offer several qualities and mirrors.
+  and sorted by quality. Series come from six sites; movies come from YouTube
+  and Dailymotion. The site players (FirePlayer, Pilavyer, and the JW
+  Player/Yandex Disk setup) are read directly, including alternative servers, so
+  one episode can offer several qualities and mirrors.
 - **Fast starts**: the aggregator no longer waits for the slowest site. Playback
   links are released as soon as the first source answers, with a short grace
   window for extra mirrors, so a Cloudflare-challenged site cannot stall the
@@ -48,6 +49,18 @@ playback links from third-party sites, and hands them to the player.
   CanlıDizi14's YouTube mirrors.
 - **Ddizi playback fix**: `video.twimg.com` streams use `https://x.com/` as
   Referer, because the Ddizi page Referer returns 403.
+- **More Turkish series sites**: **DiziMoly** (dizimoly.click), **DiziAbi**
+  (diziabi.net), and **TvDiziler** (tvdiziler.tv) add complete archives, every
+  season, and multiple mirrors. DiziMoly and DiziAbi use the same Pilavyer HLS
+  player (`s.php` → `window.__PLAYER__`). TvDiziler exposes Yandex Disk /
+  googlevideo MP4 links through JW Player, plus a spoox2 token resolved through
+  its `/ajax/service` endpoint. Yandex Disk links are emitted without the
+  tvdiziler Referer, because Yandex answers 403 when it is attached.
+- **Dailymotion movie fallback**: Dailymotion's public search API is a second
+  movie source. Results are limited to full-length videos (20+ minutes) whose
+  title matches the requested film, and playback uses the HLS manifest from the
+  player metadata endpoint. The CDN requires
+  `https://www.dailymotion.com/` as the Referer, so it is set on every link.
 - **1080p preference**: the quality chosen in settings (1080p by default) is
   moved to the top. Streams without a label are shown as `Unknown` instead of
   a fake resolution; adaptive HLS picks the best resolution the device supports.
@@ -65,8 +78,9 @@ playback links from third-party sites, and hands them to the player.
 - **Toggleable sources**: disable any site from settings if it breaks.
 - **Separate providers**: besides the `TurkMS` aggregator, each site is
   registered as its own provider with a **Latest & Archive** catalog
-  (`CanlıDizi14`, `Ddizi`, `Diziizle`, `Trdiziizle`), plus a `YouTube`
-  provider that browses TMDB movies and plays them from YouTube.
+  (`CanlıDizi14`, `Ddizi`, `Diziizle`, `Trdiziizle`, `DiziMoly`, `DiziAbi`,
+  `TvDiziler`), plus `YouTube` and `Dailymotion` providers that browse TMDB
+  movies and play them from those services.
 
 ## Sources
 
@@ -78,7 +92,11 @@ Directly scraped sites:
 | `ddizi` | ddizi.tel | TV series | JW Player (Ciner HLS, `video.twimg.com` via x.com) |
 | `diziizlenow` | diziizle.you | TV series | YouTube |
 | `trdiziizle` | trdiziizle.tv | TV series | JW Player (googlevideo MP4) |
+| `dizimoly` | dizimoly.click | TV series / movies | Pilavyer HLS (`s.php` → `window.__PLAYER__`) |
+| `diziabi` | diziabi.net | TV series / movies | Pilavyer HLS (`s.php` → `window.__PLAYER__`) |
+| `tvdiziler` | tvdiziler.tv | TV series | JW Player (Yandex Disk / googlevideo), spoox2 |
 | `youtube` | youtube.com | Movies | visionOS InnerTube HLS |
+| `dailymotion` | dailymotion.com | Movies | Dailymotion HLS (player metadata) |
 
 Catalog pagination:
 
@@ -91,6 +109,14 @@ Catalog pagination:
   38 archive pages).
 - `trdiziizle` reads the complete `/dizi-arsivi-01/` archive (about 460 series),
   caches it, and paginates locally at 90 items per app page.
+- `dizimoly` merges `/dizi-arsivi/?sirala=yeni&page=N` and
+  `/filmler?sirala=yeni&page=N` (24 cards each) for the shared catalog.
+- `diziabi` merges `/diziler?page=N` and
+  `/film-arsivi/?sirala=yeni&page=N` (24 cards each).
+- `tvdiziler` reads the single alphabetical `/dizi-izle` list, caches it for ten
+  minutes, and paginates locally at 90 items per app page.
+- `dailymotion` uses TMDB for its movie rows; each title is resolved through
+  Dailymotion's search API at playback time.
 - TMDB rows fetch three TMDB pages per app page, so a row opens with 60 titles
   and loads up to 360. The movie and series year filters from Settings are sent
   to TMDB as release/air-date bounds.
@@ -98,13 +124,15 @@ Catalog pagination:
 Every collected link is also passed through CloudStream's built-in extractor
 library (`loadExtractor`), which understands dozens of hosts such as YouTube,
 Vimeo, Dailymotion, Doodstream, Filemoon, and Streamtape. So "50+ providers"
-means 5 scraped sources plus CloudStream's host support — not 50 scraped sites.
+means 9 scraped sources plus CloudStream's host support — not 50 scraped sites.
 
 ### About movies
 
-The four scraped sites only publish **TV series** (canlidizi14's "movies"
-section is made of digital series split into episodes). Movie playback
-therefore uses the **YouTube** source:
+The scraped series sites mostly publish **TV series** (canlidizi14's "movies"
+section is made of digital series split into episodes). Movie playback therefore
+uses two sources, tried side by side:
+
+**YouTube**
 
 1. The movie's Turkish title is read from TMDB.
 2. YouTube is searched for `"<title> full film türkçe izle"`.
@@ -114,9 +142,19 @@ therefore uses the **YouTube** source:
    extractor is tried second. A raw YouTube watch-page URL is never emitted as a
    playable stream.
 
+**Dailymotion**
+
+1. The same TMDB title, original title, and year are used.
+2. Dailymotion's public video search API returns candidates without an API key.
+3. Results shorter than 20 minutes, or whose title does not match the requested
+   film, are discarded.
+4. The player metadata endpoint supplies the HLS manifest, which is emitted with
+   `https://www.dailymotion.com/` as Referer.
+
 YouTube may still refuse some videos due to age, region, or copyright
-restrictions; in that case the movie page still opens but the playback list
-stays empty. That is more honest than silently returning a wrong stream.
+restrictions, and Dailymotion may not carry a given film at all. In that case
+the movie page still opens but the playback list stays empty. That is more
+honest than silently returning a wrong stream.
 
 ## Installation
 
@@ -154,8 +192,8 @@ Open **Extensions → TurkMS → Settings**:
 
 - **TMDB API key (v3)**: leave empty to use the built-in demo key. Get a
   personal key at <https://www.themoviedb.org/settings/api>.
-- **Sources**: toggle each of the four series sites and the YouTube movie
-  search.
+- **Sources**: toggle each of the six series sites, the YouTube movie search,
+  and the Dailymotion movie search.
 - **Catalog years**: choose a year for **Movies** and a different year for
   **Series**. **All years** keeps the complete Turkish catalog. The selected
   year is reflected in the row names and applies to the regular, New, and Top
@@ -271,9 +309,16 @@ git push -f origin builds
   providers appear under Turkish.
 - **No streams for a series**: the site may be down, geo-blocked, or changed
   its markup. Disable that source and try another.
+- **No streams from DiziMoly/DiziAbi**: some episodes are marked
+  `data-player-type="none"` by the site itself, which means no source was
+  published. Try another episode or mirror.
+- **TvDiziler Yandex links return 403**: the plugin deliberately sends no
+  tvdiziler Referer to Yandex Disk. A proxy or network that injects one will
+  break those links; use the direct network or another source.
 - **No streams for a movie**: YouTube's visionOS client or CloudStream's
-  extractor refused that video (age, region, or copyright). Try again later; the
-  plugin never substitutes a wrong link.
+  extractor refused that video (age, region, or copyright), and Dailymotion had
+  no full-length match. Try again later; the plugin never substitutes a wrong
+  link.
 - **No Arabic subtitles for a title**: subtitles are matched by IMDb id or
   title, and TV results must have the exact season/episode marker. A title that
   TMDB cannot map to IMDb, or one that SubtitleCat/OpenSubtitles does not carry
@@ -306,8 +351,8 @@ TurkMS/
 │   ├── build.gradle.kts          # Plugin metadata
 │   └── src/main/kotlin/com/turkms/
 │       ├── TurkMSPlugin.kt       # Entry point, provider registration
-│       ├── providers/            # TurkMS + 4 site providers
-│       ├── sources/              # Site scrapers
+│       ├── providers/            # TurkMS, 6 site providers, YouTube, Dailymotion
+│       ├── sources/              # Site scrapers (incl. MolyAbi, TvDiziler, Dailymotion)
 │       ├── Tmdb.kt               # TMDB v3 client
 │       ├── YoutubeHls.kt         # visionOS InnerTube → HLS resolver
 │       ├── Subtitles.kt          # SubtitleCat/Wyzie/SubDL/SubSource + matching

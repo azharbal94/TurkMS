@@ -15,6 +15,10 @@ object TurkMSSettings {
     private const val KEY_NOW = "source_diziizlenow"
     private const val KEY_TR = "source_trdiziizle"
     private const val KEY_YT = "source_youtube"
+    private const val KEY_DIZIMOLY = "source_dizimoly"
+    private const val KEY_DIZIABI = "source_diziabi"
+    private const val KEY_TVDIZILER = "source_tvdiziler"
+    private const val KEY_DAILYMOTION = "source_dailymotion"
     private const val KEY_QUALITY = "preferred_quality"
     private const val KEY_TIMEOUT = "request_timeout"
     private const val KEY_ARABIC_SUBS = "arabic_subtitles"
@@ -33,6 +37,10 @@ object TurkMSSettings {
     var sourceDiziIzleNow: Boolean = true
     var sourceTrDiziIzle: Boolean = true
     var sourceYoutube: Boolean = true
+    var sourceDizimoly: Boolean = true
+    var sourceDiziabi: Boolean = true
+    var sourceTvDiziler: Boolean = true
+    var sourceDailymotion: Boolean = true
     var preferredQuality: Int = 1080
     var requestTimeout: Long = 20L
     var arabicSubtitles: Boolean = true
@@ -54,6 +62,10 @@ object TurkMSSettings {
         sourceDiziIzleNow = p.getBoolean(KEY_NOW, true)
         sourceTrDiziIzle = p.getBoolean(KEY_TR, true)
         sourceYoutube = p.getBoolean(KEY_YT, true)
+        sourceDizimoly = p.getBoolean(KEY_DIZIMOLY, true)
+        sourceDiziabi = p.getBoolean(KEY_DIZIABI, true)
+        sourceTvDiziler = p.getBoolean(KEY_TVDIZILER, true)
+        sourceDailymotion = p.getBoolean(KEY_DAILYMOTION, true)
         preferredQuality = p.getInt(KEY_QUALITY, 1080)
         requestTimeout = p.getLong(KEY_TIMEOUT, 20L)
         arabicSubtitles = p.getBoolean(KEY_ARABIC_SUBS, true)
@@ -72,6 +84,10 @@ object TurkMSSettings {
         now: Boolean,
         tr: Boolean,
         youtube: Boolean,
+        dizimoly: Boolean = true,
+        diziabi: Boolean = true,
+        tvdiziler: Boolean = true,
+        dailymotion: Boolean = true,
         quality: Int,
         timeout: Long,
         subtitles: Boolean,
@@ -89,6 +105,10 @@ object TurkMSSettings {
             .putBoolean(KEY_NOW, now)
             .putBoolean(KEY_TR, tr)
             .putBoolean(KEY_YT, youtube)
+            .putBoolean(KEY_DIZIMOLY, dizimoly)
+            .putBoolean(KEY_DIZIABI, diziabi)
+            .putBoolean(KEY_TVDIZILER, tvdiziler)
+            .putBoolean(KEY_DAILYMOTION, dailymotion)
             .putInt(KEY_QUALITY, quality)
             .putLong(KEY_TIMEOUT, timeout)
             .putBoolean(KEY_ARABIC_SUBS, subtitles)
@@ -105,6 +125,10 @@ object TurkMSSettings {
         sourceDiziIzleNow = now
         sourceTrDiziIzle = tr
         sourceYoutube = youtube
+        sourceDizimoly = dizimoly
+        sourceDiziabi = diziabi
+        sourceTvDiziler = tvdiziler
+        sourceDailymotion = dailymotion
         preferredQuality = quality
         requestTimeout = timeout
         arabicSubtitles = subtitles
