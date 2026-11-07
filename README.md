@@ -52,15 +52,10 @@ playback links from third-party sites, and hands them to the player.
 - **More Turkish series sites**: **DiziMoly** (dizimoly.click), **DiziAbi**
   (diziabi.net), and **TvDiziler** (tvdiziler.tv) add complete archives, every
   season, and multiple mirrors. DiziMoly and DiziAbi use the same Pilavyer HLS
-  player (`s.php` → `window.__PLAYER__`). The default Pilavyer playlist spreads
-  its segments over the `pilavyer1..6.top` shard domains, which several ISPs
-  block or throttle; the plugin therefore emits the player's `cdn=0` origin
-  playlist first (all segments from the stable `play2`/`pilavyerplay` host) and
-  keeps the shard playlist as a manual **HLS (CDN)** fallback. TvDiziler exposes
-  Yandex Disk / googlevideo MP4 links through JW Player, plus a spoox2 token
-  resolved through its `/ajax/service` endpoint. Yandex Disk and googlevideo
-  links are emitted without the tvdiziler Referer: Yandex answers 403 when it is
-  attached, and Google's CDN starts faster without it.
+  player (`s.php` → `window.__PLAYER__`). TvDiziler exposes Yandex Disk /
+  googlevideo MP4 links through JW Player, plus a spoox2 token resolved through
+  its `/ajax/service` endpoint. Yandex Disk links are emitted without the
+  tvdiziler Referer, because Yandex answers 403 when it is attached.
 - **Dailymotion movie fallback**: Dailymotion's public search API is a second
   movie source. Results are limited to full-length videos (20+ minutes) whose
   title matches the requested film, and playback uses the HLS manifest from the

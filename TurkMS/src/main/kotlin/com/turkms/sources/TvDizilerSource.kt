@@ -307,10 +307,6 @@ class TvDizilerSource : SiteSource() {
             val stream = absoluteUrl(playerUrl, file)
             val isHls = type.contains("hls", true) || stream.contains(".m3u8")
             val isYandex = stream.contains("disk.yandex") || stream.contains("yandex.ru")
-            // Google's CDN does not need the site Referer, and sending it makes
-            // the first megabytes noticeably slower (measured 6 MB/s vs 8 MB/s).
-            // A faster start means less initial buffering.
-            val isGoogleVideo = stream.contains("googlevideo.com")
             emitLink(
                 source = name,
                 label = if (label.equals("auto", true)) "Otomatik" else label,
@@ -318,7 +314,7 @@ class TvDizilerSource : SiteSource() {
                 type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
                 // Yandex Disk returns 403 when the tvdiziler Referer is attached.
                 // An empty referer makes ExoPlayer send no Referer, which works.
-                referer = if (isYandex || isGoogleVideo) "" else pageUrl,
+                referer = if (isYandex) "" else pageUrl,
                 callback = callback,
             )
             emitted = true
