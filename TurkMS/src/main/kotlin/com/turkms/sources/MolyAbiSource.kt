@@ -240,14 +240,36 @@ abstract class MolyAbiSource : SiteSource() {
             if (html != null) {
                 val stream = playerStream(html)
                 if (stream.isNotBlank()) {
+                    // The default playlist spreads its segments over the
+                    // pilavyer1..6.top shard domains. Several ISPs block or
+                    // throttle those hosts, and when one shard dies playback
+                    // stops on that segment even though the rest of the file
+                    // is healthy - this is the "random buffering" users see.
+                    //
+                    // The player itself supports an origin mode through
+                    // `cdn=0`: the manifest then serves every segment from the
+                    // stable play2/pilavyerplay host instead of the shards.
+                    // Emit that first and keep the CDN playlist as a manual
+                    // fallback for connections where the shards are faster.
+                    val origin = withCdnDisabled(stream)
                     emitLink(
                         source = name,
                         label = "Otomatik (HLS)",
-                        url = stream,
+                        url = origin,
                         type = ExtractorLinkType.M3U8,
                         referer = url,
                         callback = callback,
                     )
+                    if (origin != stream) {
+                        emitLink(
+                            source = name,
+                            label = "HLS (CDN)",
+                            url = stream,
+                            type = ExtractorLinkType.M3U8,
+                            referer = url,
+                            callback = callback,
+                        )
+                    }
                     return true
                 }
             }
@@ -295,6 +317,17 @@ abstract class MolyAbiSource : SiteSource() {
             .find(html)?.groupValues?.getOrNull(1)
             ?: return ""
         return cleanPlayerUrl(raw).replace("&amp;", "&")
+    }
+
+    /**
+     * Turns the shard-based playlist into the player's origin playlist.
+     * `cdn=0` is understood by the Pilavyer backend and is propagated into the
+     * master playlist, the audio playlists and the segment URLs.
+     */
+    private fun withCdnDisabled(stream: String): String {
+        if (Regex("""[?&]cdn=0(?:&|$)""").containsMatchIn(stream)) return stream
+        val separator = if (stream.contains('?')) '&' else '?'
+        return "$stream${separator}cdn=0"
     }
 
     /** Returns the index of the `}` that closes the object opened at [open]. */
