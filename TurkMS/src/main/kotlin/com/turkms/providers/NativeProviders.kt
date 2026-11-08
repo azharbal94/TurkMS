@@ -21,9 +21,12 @@ import com.turkms.sources.CanliDizi14Source
 import com.turkms.sources.DdiziSource
 import com.turkms.sources.DiziabiSource
 import com.turkms.sources.DiziIzleNowSource
+import com.turkms.sources.DiziboxSource
 import com.turkms.sources.DizimolySource
+import com.turkms.sources.JetFilmizleSource
 import com.turkms.sources.TrDiziIzleSource
 import com.turkms.sources.TvDizilerSource
+import com.turkms.sources.YabancidiziSource
 import com.turkms.sortForPreferredQuality
 import com.turkms.toLoadResponse
 import com.turkms.toSearchResponse
@@ -36,7 +39,14 @@ abstract class BaseSiteProvider(private val site: SiteSource) : MainAPI() {
         lang = "tr"
     }
 
-    override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
+    override val supportedTypes: Set<TvType> = mutableSetOf<TvType>().apply {
+        if (site.supportsMovies) add(TvType.Movie)
+        if (site.supportsSeries) add(TvType.TvSeries)
+        if (isEmpty()) {
+            add(TvType.Movie)
+            add(TvType.TvSeries)
+        }
+    }
     override val hasMainPage = true
     override val mainPage = listOf(MainPageData("Latest & Archive", "latest"))
 
@@ -148,3 +158,6 @@ class TrDiziIzleProvider : BaseSiteProvider(TrDiziIzleSource())
 class DizimolyProvider : BaseSiteProvider(DizimolySource())
 class DiziabiProvider : BaseSiteProvider(DiziabiSource())
 class TvDizilerProvider : BaseSiteProvider(TvDizilerSource())
+class DiziboxProvider : BaseSiteProvider(DiziboxSource())
+class YabancidiziProvider : BaseSiteProvider(YabancidiziSource())
+class JetFilmizleProvider : BaseSiteProvider(JetFilmizleSource())

@@ -78,6 +78,18 @@ fun showSettingsDialog(context: Context) {
         text = "TvDiziler (tvdiziler.tv)"
         isChecked = TurkMSSettings.sourceTvDiziler
     }
+    val dizibox = CheckBox(context).apply {
+        text = "Dizibox (dizibox.live, series)"
+        isChecked = TurkMSSettings.sourceDizibox
+    }
+    val yabancidizi = CheckBox(context).apply {
+        text = "Yabancı Dizi (yabancidizi.news, series)"
+        isChecked = TurkMSSettings.sourceYabancidizi
+    }
+    val jetfilmizle = CheckBox(context).apply {
+        text = "JetFilmizle (jetfilmizle.app, movies)"
+        isChecked = TurkMSSettings.sourceJetFilmizle
+    }
     val dailymotion = CheckBox(context).apply {
         text = "Dailymotion (movie search)"
         isChecked = TurkMSSettings.sourceDailymotion
@@ -90,6 +102,9 @@ fun showSettingsDialog(context: Context) {
     layout.addView(dizimoly)
     layout.addView(diziabi)
     layout.addView(tvdiziler)
+    layout.addView(dizibox)
+    layout.addView(yabancidizi)
+    layout.addView(jetfilmizle)
     layout.addView(dailymotion)
 
     val subtitles = CheckBox(context).apply {
@@ -241,6 +256,9 @@ fun showSettingsDialog(context: Context) {
                 dizimoly = dizimoly.isChecked,
                 diziabi = diziabi.isChecked,
                 tvdiziler = tvdiziler.isChecked,
+                dizibox = dizibox.isChecked,
+                yabancidizi = yabancidizi.isChecked,
+                jetfilmizle = jetfilmizle.isChecked,
                 dailymotion = dailymotion.isChecked,
                 quality = quality,
                 timeout = TurkMSSettings.requestTimeout,

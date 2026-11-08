@@ -43,6 +43,7 @@ abstract class SiteSource {
     abstract val name: String
     abstract val mainUrl: String
     open val supportsMovies: Boolean = false
+    open val supportsSeries: Boolean = true
 
     open suspend fun search(query: String): List<SiteResult> = emptyList()
 

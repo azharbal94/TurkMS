@@ -41,9 +41,12 @@ import com.turkms.sources.DailymotionSource
 import com.turkms.sources.DdiziSource
 import com.turkms.sources.DiziabiSource
 import com.turkms.sources.DiziIzleNowSource
+import com.turkms.sources.DiziboxSource
 import com.turkms.sources.DizimolySource
+import com.turkms.sources.JetFilmizleSource
 import com.turkms.sources.TrDiziIzleSource
 import com.turkms.sources.TvDizilerSource
+import com.turkms.sources.YabancidiziSource
 import com.turkms.sources.YoutubeMovieSource
 import com.turkms.titleScore
 import com.turkms.toLoadResponse
@@ -141,6 +144,9 @@ class TurkMSProvider : MainAPI() {
         DizimolySource(),
         DiziabiSource(),
         TvDizilerSource(),
+        DiziboxSource(),
+        YabancidiziSource(),
+        JetFilmizleSource(),
         DailymotionSource(),
         YoutubeMovieSource(),
     )
@@ -154,6 +160,9 @@ class TurkMSProvider : MainAPI() {
             "dizimoly" -> TurkMSSettings.sourceDizimoly
             "diziabi" -> TurkMSSettings.sourceDiziabi
             "tvdiziler" -> TurkMSSettings.sourceTvDiziler
+            "dizibox" -> TurkMSSettings.sourceDizibox
+            "yabancidizi" -> TurkMSSettings.sourceYabancidizi
+            "jetfilmizle" -> TurkMSSettings.sourceJetFilmizle
             "dailymotion" -> TurkMSSettings.sourceDailymotion
             "youtube" -> TurkMSSettings.sourceYoutube
             else -> false

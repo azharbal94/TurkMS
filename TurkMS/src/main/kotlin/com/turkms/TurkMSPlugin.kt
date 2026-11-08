@@ -8,10 +8,13 @@ import com.turkms.providers.DailymotionProvider
 import com.turkms.providers.DdiziProvider
 import com.turkms.providers.DiziabiProvider
 import com.turkms.providers.DiziIzleNowProvider
+import com.turkms.providers.DiziboxProvider
 import com.turkms.providers.DizimolyProvider
+import com.turkms.providers.JetFilmizleProvider
 import com.turkms.providers.TrDiziIzleProvider
 import com.turkms.providers.TurkMSProvider
 import com.turkms.providers.TvDizilerProvider
+import com.turkms.providers.YabancidiziProvider
 import com.turkms.providers.YoutubeProvider
 
 @CloudstreamPlugin
@@ -30,6 +33,9 @@ class TurkMSPlugin : Plugin() {
         registerMainAPI(DizimolyProvider())
         registerMainAPI(DiziabiProvider())
         registerMainAPI(TvDizilerProvider())
+        registerMainAPI(DiziboxProvider())
+        registerMainAPI(YabancidiziProvider())
+        registerMainAPI(JetFilmizleProvider())
         registerMainAPI(DailymotionProvider())
         registerMainAPI(YoutubeProvider())
 
