@@ -109,6 +109,30 @@ class DiziIzleNowSource : SiteSource() {
             )
         }
 
+        // The site's own list is enough on every page we have seen, but if the
+        // `ol.bl-liste` markup changes the screen would show a poster with no
+        // episodes. Recover the episode links from the page itself instead.
+        if (episodes.isEmpty()) {
+            for (anchor in document.select("a[href]")) {
+                val href = absoluteUrl(mainUrl, anchor.attr("href"))
+                if (href.isBlank() || !Regex("""/bolum-\d+/?$""").containsMatchIn(href)) continue
+                if (!seen.add(href)) continue
+                val label = anchor.attr("title").ifBlank { anchor.text() }
+                    .replace(Regex("\\s+"), " ").trim()
+                val episodeNumber = parseEpisodeNumber(label) ?: parseEpisodeNumber(href)
+                val clean = label.ifBlank { "Bölüm ${episodeNumber ?: ""}" }
+                episodes.add(
+                    SiteEpisode(
+                        name = clean,
+                        url = href,
+                        season = 1,
+                        episode = episodeNumber,
+                        poster = poster,
+                    )
+                )
+            }
+        }
+
         return SiteDetails(
             name = name,
             url = url,
@@ -131,7 +155,16 @@ class DiziIzleNowSource : SiteSource() {
         if (playerUrl.contains("/fireplayer/video/")) {
             if (extractFirePlayer(playerUrl, url, name, callback)) return true
         }
-        val html = fetchText(playerUrl, url) ?: return false
+        // The player endpoint occasionally answers 500 to a plain GET but
+        // succeeds when it is treated as an AJAX request, so retry that way
+        // before giving up on the episode.
+        val html = fetchText(playerUrl, url)
+            ?: fetchText(
+                playerUrl,
+                url,
+                headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
+            )
+            ?: return false
 
         val youTube = Regex("""var\s+YT_SRC\s*=\s*["']([^"']+)["']""")
             .find(html)?.groupValues?.getOrNull(1)

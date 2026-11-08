@@ -1,4 +1,4 @@
-version = 8
+version = 10
 
 cloudstream {
     description = "TurkMS - TMDB-powered multi-source CloudStream plugin for Turkish movies and TV series."

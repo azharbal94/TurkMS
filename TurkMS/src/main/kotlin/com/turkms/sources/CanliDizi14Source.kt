@@ -27,7 +27,7 @@ import org.jsoup.nodes.Document
 class CanliDizi14Source : SiteSource() {
     override val key = "canlidizi14"
     override val name = "CanlıDizi14"
-    override val mainUrl = "https://www.canlidizi14.net"
+    override val mainUrl = "https://www.canlidizi14.com"
     override val supportsMovies = true
 
     override suspend fun search(query: String): List<SiteResult> {
@@ -41,13 +41,22 @@ class CanliDizi14Source : SiteSource() {
         val firstPage = (page - 1) * 3 + 1
         val results = mutableListOf<SiteResult>()
         for (archivePage in firstPage until firstPage + 3) {
-            val url = if (archivePage == 1) {
-                "$mainUrl/dizi-arsivi/"
+            // Different mirrors expose the archive under slightly different
+            // paths. Try the short `/diziler` list before giving up on a page,
+            // otherwise a 404 here empties the whole provider home screen.
+            val paths = if (archivePage == 1) {
+                listOf("/dizi-arsivi/", "/diziler")
             } else {
-                "$mainUrl/dizi-arsivi/page/$archivePage"
+                listOf("/dizi-arsivi/page/$archivePage")
             }
-            val document = fetchDocument(url) ?: continue
-            results.addAll(parseCards(document))
+            for (path in paths) {
+                val document = fetchDocument("$mainUrl$path") ?: continue
+                val cards = parseCards(document)
+                if (cards.isNotEmpty()) {
+                    results.addAll(cards)
+                    break
+                }
+            }
         }
         return results.distinctBy { it.url }
     }
@@ -80,7 +89,7 @@ class CanliDizi14Source : SiteSource() {
         val episodes = parseEpisodes(document)
         // Every URL contains /kategori/, so only the episode list tells us what
         // this page is. A page without episodes is treated as a film.
-        val isSeries = episodes.isNotEmpty()
+        val isSeries = episodes.isNotEmpty() || url.contains("-son-bolum")
 
         val title = document.selectFirst("h1")?.text()
             ?.replace(Regex("(?i)\\s+son\\s+b[oö]l[uü]m\\s+izle.*$"), "")
@@ -160,6 +169,29 @@ class CanliDizi14Source : SiteSource() {
                     episode = parseEpisodeNumber(name),
                 )
             )
+        }
+
+        // The site moved to a new theme whose episode list is no longer wrapped
+        // in `div.bolumust`. Fall back to the page's own episode links.
+        if (result.isEmpty()) {
+            for (anchor in document.select("a[href]")) {
+                val href = absoluteUrl(mainUrl, anchor.attr("href"))
+                if (href.isBlank() || !seen.add(href)) continue
+                if (!Regex("(?i)bolum").containsMatchIn(href)) continue
+                if (Regex("(?i)tum-bolum|fragman|dizi-arsivi|arsiv").containsMatchIn(href)) continue
+                if (!Regex("(?i)bolum-izle|\\d+-bolum|-bolum-").containsMatchIn(href)) continue
+                val label = anchor.attr("title").ifBlank { anchor.text() }
+                    .replace(Regex("\\s+"), " ").trim()
+                if (label.isBlank() || !Regex("(?i)bol[uü]m").containsMatchIn(label)) continue
+                result.add(
+                    SiteEpisode(
+                        name = label,
+                        url = href,
+                        season = parseSeasonNumber(label) ?: 1,
+                        episode = parseEpisodeNumber(label) ?: parseEpisodeNumber(href),
+                    )
+                )
+            }
         }
         return result
     }

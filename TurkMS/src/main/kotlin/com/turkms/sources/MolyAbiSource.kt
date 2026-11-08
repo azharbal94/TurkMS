@@ -195,34 +195,50 @@ abstract class MolyAbiSource : SiteSource() {
 
         val seen = mutableSetOf<String>()
         val result = mutableListOf<SiteEpisode>()
-        for (page in pages) {
-            for (anchor in page.select("a[href]")) {
-                val href = absoluteUrl(mainUrl, anchor.attr("href"))
-                val match = EPISODE_PATTERN.find(href) ?: continue
 
-                // The hero "İlk Bölüm İzle" button links to the same episode as
-                // the first card but has no episode meta paragraph. Skip it
-                // before touching the dedupe set, otherwise it would hide the
-                // real card for that episode.
-                val meta = anchor.selectFirst("p.text-xs")?.text()?.trim() ?: continue
-                if (meta.isBlank()) continue
-                if (!seen.add(href)) continue
+        // Some layout variants omit the meta paragraph. Collect the clean cards
+        // first; only relax that requirement when it would leave the show with
+        // no episodes at all.
+        fun collect(requireMeta: Boolean) {
+            for (page in pages) {
+                for (anchor in page.select("a[href]")) {
+                    val href = absoluteUrl(mainUrl, anchor.attr("href"))
+                    val match = EPISODE_PATTERN.find(href) ?: continue
 
-                val season = match.groupValues[1].toIntOrNull() ?: 1
-                val number = match.groupValues[2].toIntOrNull()
-                val title = anchor.selectFirst("p.truncate")?.text()?.trim()
-                val name = if (!title.isNullOrBlank()) "$meta - $title" else meta
-                if (name.isBlank()) continue
+                    // The hero "İlk Bölüm İzle" button links to the same episode
+                    // as the first card but has no episode meta paragraph. Skip
+                    // it before touching the dedupe set, otherwise it would hide
+                    // the real card for that episode.
+                    val cardMeta = anchor.selectFirst("p.text-xs")?.text()?.trim().orEmpty()
+                    if (requireMeta && cardMeta.isBlank()) continue
+                    if (!seen.add(href)) continue
 
-                result.add(
-                    SiteEpisode(
-                        name = name,
-                        url = href,
-                        season = season,
-                        episode = number,
+                    val meta = cardMeta.ifBlank {
+                        anchor.text().replace(Regex("\\s+"), " ").trim()
+                    }
+                    if (meta.isBlank()) continue
+
+                    val season = match.groupValues[1].toIntOrNull() ?: 1
+                    val number = match.groupValues[2].toIntOrNull()
+                    val title = anchor.selectFirst("p.truncate")?.text()?.trim()
+                    val name = if (!title.isNullOrBlank()) "$meta - $title" else meta
+
+                    result.add(
+                        SiteEpisode(
+                            name = name,
+                            url = href,
+                            season = season,
+                            episode = number,
+                        )
                     )
-                )
+                }
             }
+        }
+
+        collect(requireMeta = true)
+        if (result.isEmpty()) {
+            seen.clear()
+            collect(requireMeta = false)
         }
         return result.sortedWith(compareBy({ it.season ?: 1 }, { it.episode ?: 0 }))
     }

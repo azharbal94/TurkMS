@@ -1,7 +1,10 @@
 package com.turkms
 
 import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.nicehttp.JsonAsString
+import com.lagradost.nicehttp.NiceResponse
+import okhttp3.Interceptor
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
@@ -31,61 +34,108 @@ val TURKMS_PLAYBACK_HEADERS = mapOf(
     "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8",
 )
 
-suspend fun fetchDocument(
+/**
+ * Cloudflare's JavaScript challenge and "blocked" pages are served as normal
+ * 200/403 HTML documents, so a scraper that only checks for a non-null body
+ * silently parses an empty page. These markers are specific to those pages;
+ * do not match `challenge-platform` because Cloudflare injects that script into
+ * perfectly valid pages too.
+ */
+private fun looksLikeCloudflareBlock(html: String?): Boolean {
+    if (html.isNullOrBlank()) return false
+    val head = html.take(6000)
+    return head.contains("Just a moment", ignoreCase = true) ||
+        head.contains("cf-browser-verification", ignoreCase = true) ||
+        head.contains("Attention Required", ignoreCase = true) ||
+        head.contains("Enable JavaScript and cookies to continue", ignoreCase = true) ||
+        head.contains("Checking your browser before accessing", ignoreCase = true)
+}
+
+/** One shared killer so the cookies it obtains survive between requests. */
+private val cloudflareKiller: CloudflareKiller by lazy { CloudflareKiller() }
+
+private suspend fun getResponse(
     url: String,
-    referer: String? = null,
-    headers: Map<String, String> = emptyMap(),
-): Document? = runCatching {
+    referer: String?,
+    headers: Map<String, String>,
+    interceptor: Interceptor? = null,
+): NiceResponse? = runCatching {
     app.get(
         url,
         headers = TURKMS_HEADERS + headers,
         referer = referer,
         timeout = TurkMSSettings.requestTimeout,
-    ).document
+        interceptor = interceptor,
+    )
 }.getOrNull()
+
+private suspend fun getWithCloudflare(
+    url: String,
+    referer: String?,
+    headers: Map<String, String>,
+): NiceResponse? {
+    val first = getResponse(url, referer, headers) ?: return null
+    val body = runCatching { first.text }.getOrNull()
+    if (!looksLikeCloudflareBlock(body)) return first
+    // Only a real challenge is retried; a dead origin (HTTP 520) is not
+    // something a WebView can solve and retrying would just waste time.
+    return runCatching { getResponse(url, referer, headers, cloudflareKiller) }.getOrNull() ?: first
+}
+
+private suspend fun postResponse(
+    url: String,
+    data: Map<String, String>,
+    referer: String?,
+    headers: Map<String, String>,
+    interceptor: Interceptor? = null,
+): NiceResponse? = runCatching {
+    app.post(
+        url,
+        data = data,
+        headers = TURKMS_HEADERS + headers,
+        referer = referer,
+        timeout = TurkMSSettings.requestTimeout,
+        interceptor = interceptor,
+    )
+}.getOrNull()
+
+private suspend fun postWithCloudflare(
+    url: String,
+    data: Map<String, String>,
+    referer: String?,
+    headers: Map<String, String>,
+): NiceResponse? {
+    val first = postResponse(url, data, referer, headers) ?: return null
+    val body = runCatching { first.text }.getOrNull()
+    if (!looksLikeCloudflareBlock(body)) return first
+    return runCatching { postResponse(url, data, referer, headers, cloudflareKiller) }.getOrNull() ?: first
+}
+
+suspend fun fetchDocument(
+    url: String,
+    referer: String? = null,
+    headers: Map<String, String> = emptyMap(),
+): Document? = getWithCloudflare(url, referer, headers)?.document
 
 suspend fun postDocument(
     url: String,
     data: Map<String, String>,
     referer: String? = null,
     headers: Map<String, String> = emptyMap(),
-): Document? = runCatching {
-    app.post(
-        url,
-        data = data,
-        headers = TURKMS_HEADERS + headers,
-        referer = referer,
-        timeout = TurkMSSettings.requestTimeout,
-    ).document
-}.getOrNull()
+): Document? = postWithCloudflare(url, data, referer, headers)?.document
 
 suspend fun fetchText(
     url: String,
     referer: String? = null,
     headers: Map<String, String> = emptyMap(),
-): String? = runCatching {
-    app.get(
-        url,
-        headers = TURKMS_HEADERS + headers,
-        referer = referer,
-        timeout = TurkMSSettings.requestTimeout,
-    ).text
-}.getOrNull()
+): String? = getWithCloudflare(url, referer, headers)?.text
 
 suspend fun postText(
     url: String,
     data: Map<String, String>,
     referer: String? = null,
     headers: Map<String, String> = emptyMap(),
-): String? = runCatching {
-    app.post(
-        url,
-        data = data,
-        headers = TURKMS_HEADERS + headers,
-        referer = referer,
-        timeout = TurkMSSettings.requestTimeout,
-    ).text
-}.getOrNull()
+): String? = postWithCloudflare(url, data, referer, headers)?.text
 
 suspend fun postJsonText(
     url: String,

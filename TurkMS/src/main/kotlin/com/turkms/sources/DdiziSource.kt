@@ -20,6 +20,9 @@ import com.turkms.parseEpisodeNumber
 import com.turkms.parseJwSources
 import com.turkms.parseSeasonNumber
 import com.turkms.postDocument
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 
 class DdiziSource : SiteSource() {
@@ -208,13 +211,40 @@ class DdiziSource : SiteSource() {
             // Follow all of them; the site's own pages are 10 episodes each.
             .take(30)
 
-        for (pageUrl in pages) {
-            val page = fetchDocument(pageUrl, firstUrl) ?: continue
-            for (episode in parseEpisodes(page)) {
-                if (seen.add(episode.url)) episodes.add(episode)
+        // Fetch the extra pages in small batches. Doing them one by one made a
+        // long show (Kızılcık Şerbeti has 15+ pages) exceed CloudStream's load
+        // timeout on a phone, which looked like "poster shows, no episodes".
+        // Batches of five keep the site from answering a burst with a block.
+        for (batch in pages.chunked(5)) {
+            val fetched = coroutineScope {
+                batch.map { pageUrl ->
+                    async {
+                        withTimeoutOrNull(12_000) { fetchDocument(pageUrl, firstUrl) }
+                    }
+                }.awaitAll()
+            }
+            for (page in fetched.filterNotNull()) {
+                for (episode in parseEpisodes(page)) {
+                    if (seen.add(episode.url)) episodes.add(episode)
+                }
             }
         }
         return episodes.sortedBy { it.episode ?: Int.MAX_VALUE }
+    }
+
+    /**
+     * The show's own list lives in the content column. If that column's markup
+     * changes, fall back to every `/izle/` anchor inside it rather than
+     * returning an empty episode list.
+     */
+    private fun episodeAnchors(document: org.jsoup.nodes.Document): List<org.jsoup.nodes.Element> {
+        val scoped = document.select(
+            "div.content_ div.dizi-boxpost-cat a[href*=izle], div.content_ div.video-g a[href*=izle]"
+        )
+        if (scoped.isNotEmpty()) return scoped
+        val content = document.selectFirst("div.content_, div.content")
+            ?: return emptyList()
+        return content.select("a[href*=/izle/]")
     }
 
     private fun parseEpisodes(document: org.jsoup.nodes.Document): List<SiteEpisode> {
@@ -222,9 +252,7 @@ class DdiziSource : SiteSource() {
         val result = mutableListOf<SiteEpisode>()
         // Scope to the content column, otherwise the "Bugünkü Bölümler" sidebar
         // of other series leaks into this show's episode list.
-        for (link in document.select(
-            "div.content_ div.dizi-boxpost-cat a[href*=izle], div.content_ div.video-g a[href*=izle]"
-        )) {
+        for (link in episodeAnchors(document)) {
             val href = absoluteUrl(mainUrl, link.attr("href"))
             if (href.isBlank() || !seen.add(href)) continue
             val label = link.attr("title").ifBlank { link.text() }

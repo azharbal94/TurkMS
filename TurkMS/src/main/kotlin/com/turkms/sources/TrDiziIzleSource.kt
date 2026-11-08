@@ -12,6 +12,7 @@ import com.turkms.cleanPlayerUrl
 import com.turkms.emitLink
 import com.turkms.encode
 import com.turkms.extractWithBuiltins
+import com.turkms.extractYoutubeWithFallback
 import com.turkms.fetchDocument
 import com.turkms.fetchText
 import com.turkms.findPlayerIframe
@@ -20,6 +21,7 @@ import com.turkms.parseEpisodeNumber
 import com.turkms.parseJwSources
 import com.turkms.parseSeasonNumber
 import com.turkms.parseYear
+import com.turkms.youtubeId
 import kotlinx.coroutines.withTimeoutOrNull
 
 class TrDiziIzleSource : SiteSource() {
@@ -181,6 +183,28 @@ class TrDiziIzleSource : SiteSource() {
                 )
             )
         }
+
+        // Newer theme variants dropped the `div.bolumust` wrapper. Recover the
+        // episode links from the page so the provider never shows an empty list.
+        if (result.isEmpty()) {
+            for (anchor in document.select("a[href]")) {
+                val href = absoluteUrl(mainUrl, anchor.attr("href"))
+                if (href.isBlank() || !seen.add(href)) continue
+                val path = href.substringAfter("://").substringAfter("/")
+                if (!Regex("(?i)-bolum").containsMatchIn(path)) continue
+                if (path.startsWith("diziler/") || path.contains("tum-bolum")) continue
+                val label = anchor.text().replace(Regex("\\s+"), " ").trim()
+                if (label.isBlank() || !Regex("(?i)bol[uü]m").containsMatchIn(label)) continue
+                result.add(
+                    SiteEpisode(
+                        name = label,
+                        url = href,
+                        season = parseSeasonNumber(label) ?: 1,
+                        episode = parseEpisodeNumber(label) ?: parseEpisodeNumber(href),
+                    )
+                )
+            }
+        }
         return result
     }
 
@@ -191,6 +215,28 @@ class TrDiziIzleSource : SiteSource() {
         val document = fetchDocument(url) ?: return false
         val iframe = findPlayerIframe(document) ?: return false
         val playerUrl = absoluteUrl(mainUrl, iframe)
+
+        // Newer episodes are no longer served by the JW player. The iframe now
+        // points at /player/telif/index.php?id=<youtube-url>, a tiny wrapper
+        // whose only player is the YouTube upload itself (a "telif" mirror).
+        // Handing that wrapper to the built-in extractors yields nothing, so
+        // read the YouTube id before trying the old JW path.
+        val inlineYoutube = youtubeId(playerUrl)
+        if (inlineYoutube != null) {
+            return extractYoutubeWithFallback(inlineYoutube, url, callback)
+        }
+        if (playerUrl.contains("/player/telif/")) {
+            val wrapper = fetchText(playerUrl, url)
+            val wrapped = wrapper?.let {
+                Regex("""youtube\.com/(?:watch\?v=|embed/)([A-Za-z0-9_-]{6,})""")
+                    .find(it)?.groupValues?.getOrNull(1)
+                    ?: Regex("""youtu\.be/([A-Za-z0-9_-]{6,})""")
+                        .find(it)?.groupValues?.getOrNull(1)
+            }
+            if (wrapped != null) {
+                return extractYoutubeWithFallback(wrapped, url, callback)
+            }
+        }
 
         if (playerUrl.contains("/player/oynat/")) {
             val html = fetchText(playerUrl, url)

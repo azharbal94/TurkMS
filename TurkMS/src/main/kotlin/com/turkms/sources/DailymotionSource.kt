@@ -13,6 +13,9 @@ import com.turkms.fetchText
 import com.turkms.normalizeTitle
 import com.turkms.parseYear
 import com.turkms.titleScore
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.json.JSONObject
 
 /**
@@ -31,13 +34,14 @@ class DailymotionSource : SiteSource() {
 
     override suspend fun search(query: String): List<SiteResult> {
         if (query.isBlank()) return emptyList()
-        val api = "https://api.dailymotion.com/videos" +
-            "?search=${encode(query)}" +
-            "&fields=id,title,duration,thumbnail_480_url,url" +
-            "&limit=12&sort=relevance"
-        val text = fetchText(api, referer = "$mainUrl/") ?: return emptyList()
-        val json = runCatching { JSONObject(text) }.getOrNull() ?: return emptyList()
-        val list = json.optJSONArray("list") ?: return emptyList()
+
+        // Searching the bare title mostly returns trailers, reactions and news
+        // clips. Full films are usually titled "... full film" or "... izle",
+        // so query those variants in parallel and merge the results.
+        val variants = listOf(query, "$query full", "$query full film", "$query izle")
+        val items = coroutineScope {
+            variants.map { term -> async { searchApi(term) } }.awaitAll().flatten()
+        }
 
         // A one-word title such as "Baba" can only contribute one matching
         // word (20 points), so do not require the two-word score for it.
@@ -45,10 +49,10 @@ class DailymotionSource : SiteSource() {
         val requiredScore = if (meaningfulWords > 1) 40 else 20
 
         val results = mutableListOf<SiteResult>()
-        for (i in 0 until list.length()) {
-            val item = list.optJSONObject(i) ?: continue
+        val seen = mutableSetOf<String>()
+        for (item in items) {
             val id = item.optString("id").trim()
-            if (id.isBlank()) continue
+            if (id.isBlank() || !seen.add(id)) continue
             val title = item.optString("title").trim()
             if (title.isBlank()) continue
             // Movies are long; clips, trailers and highlights only add noise.
@@ -70,6 +74,17 @@ class DailymotionSource : SiteSource() {
             if (results.size >= MAX_RESULTS) break
         }
         return results.sortedByDescending { titleScore(it.name, query) }
+    }
+
+    private suspend fun searchApi(term: String): List<JSONObject> {
+        val api = "https://api.dailymotion.com/videos" +
+            "?search=${encode(term)}" +
+            "&fields=id,title,duration,thumbnail_480_url,url" +
+            "&limit=40&sort=relevance"
+        val text = fetchText(api, referer = "$mainUrl/") ?: return emptyList()
+        val json = runCatching { JSONObject(text) }.getOrNull() ?: return emptyList()
+        val list = json.optJSONArray("list") ?: return emptyList()
+        return (0 until list.length()).mapNotNull { list.optJSONObject(it) }
     }
 
     override suspend fun details(url: String): SiteDetails? {
