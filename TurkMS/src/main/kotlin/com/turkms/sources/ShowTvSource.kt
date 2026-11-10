@@ -94,7 +94,11 @@ class ShowTvSource : SiteSource() {
                 ?.substringBefore(" | Show TV")
                 ?.trim()
                 ?.takeIf { it.isNotBlank() }
-            ?: titleFromSlug(url).takeIf { it.isNotBlank() }
+            ?: titleFromSlug(
+                url.substringAfter("/dizi/tanitim/", url)
+                    .substringBefore('/')
+                    .ifBlank { url },
+            ).takeIf { it.isNotBlank() }
             ?: return null
 
         val poster = document.metaContent("og:image")?.takeIf { it.isNotBlank() }

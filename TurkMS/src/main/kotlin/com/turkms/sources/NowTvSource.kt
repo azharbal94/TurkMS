@@ -74,7 +74,7 @@ class NowTvSource : SiteSource() {
 
             val items = urls.mapNotNull { url ->
                 val clean = url.trimEnd('/')
-                val title = names[clean].orEmpty().ifBlank { titleFromSlug(clean) }
+                val title = names[clean].orEmpty().ifBlank { titleFromNowUrl(clean) }
                 if (title.isBlank()) null else SiteResult(title, clean, TvType.TvSeries)
             }.distinctBy { it.url }
 
@@ -86,11 +86,10 @@ class NowTvSource : SiteSource() {
         val document = fetchDocument(url) ?: return null
         val name = document.firstText("h1")
             ?: document.metaContent("og:title")
-                ?.substringAfter("Dizi İzle - ", "")
-                ?.substringAfter(" - ", "")
+                ?.substringAfter("Dizi İzle - ")
                 ?.trim()
                 ?.takeIf { it.isNotBlank() }
-            ?: titleFromSlug(url).takeIf { it.isNotBlank() }
+            ?: titleFromNowUrl(url).takeIf { it.isNotBlank() }
             ?: return null
 
         val poster = document.metaContent("og:image")?.takeIf { it.isNotBlank() }
@@ -235,5 +234,16 @@ class NowTvSource : SiteSource() {
     private companion object {
         const val ARCHIVE_KEY = "nowtv:archive"
         const val PAGE_SIZE = 60
+    }
+
+    /** `/Halef-Koklerin-Cagrisi/izle` -> `Halef Koklerin Cagrisi`. */
+    private fun titleFromNowUrl(url: String): String {
+        val clean = url.substringBefore("?").trimEnd('/')
+        val slug = if (clean.endsWith("/izle")) {
+            clean.substringBeforeLast('/').substringAfterLast('/')
+        } else {
+            clean.substringAfterLast('/')
+        }
+        return titleFromSlug(slug)
     }
 }
