@@ -398,8 +398,12 @@ object ArabicSubtitles {
                     SubtitleResolver.resolve(
                         downloadUrl,
                         headers = downloadHeaders,
-                        season = if (isTv && target != null) season else null,
-                        episode = if (isTv) target else null,
+                        // Untagged entries are usually season packs; pass the
+                        // requested episode so the right file is picked out of
+                        // the ZIP. The un-hinted retry below still covers
+                        // single-file downloads.
+                        season = if (isTv) season else null,
+                        episode = if (isTv) (target ?: episode) else null,
                     )
                 }
             }.getOrNull()
