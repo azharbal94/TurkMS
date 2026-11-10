@@ -1,10 +1,10 @@
 [
     {
         "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Flag_of_Turkey.svg/256px-Flag_of_Turkey.svg.png",
-        "fileHash": "sha256-dd9886ce8b983dcc2077ef622653e2f16d2d037931afb72534a0a30647f38d73",
+        "fileHash": "sha256-c90403f6f8466fa2b6148d096c25418872881ef2bcc97ae5cdd785c4805eb21d",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/azharbal94/TurkMS",
-        "fileSize": 340663,
+        "fileSize": 341179,
         "status": 1,
         "language": "en",
         "authors": [
@@ -14,7 +14,7 @@
             "Movie",
             "TvSeries"
         ],
-        "version": 12,
+        "version": 13,
         "internalName": "TurkMS",
         "description": "TurkMS - TMDB-powered multi-source CloudStream plugin for Turkish movies and TV series.",
         "url": "https://raw.githubusercontent.com/azharbal94/TurkMS/builds/TurkMS.cs3",
