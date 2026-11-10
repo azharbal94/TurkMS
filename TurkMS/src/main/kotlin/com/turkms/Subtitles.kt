@@ -47,6 +47,7 @@ object ArabicSubtitles {
     )
     private const val MAX_PER_SOURCE = 3
     private const val MAX_TOTAL = 8
+    private const val MAX_ITEMS = 400
     private const val PROVIDER_TIMEOUT_MS = 16_000L
     private const val RESOLVE_TIMEOUT_MS = 10_000L
 
@@ -304,11 +305,16 @@ object ArabicSubtitles {
             .take(3)
         if (ranked.isEmpty()) return emptyList()
 
-        data class Item(val fileName: String, val pageUrl: String, val marked: Pair<Int, Int>?)
+        data class Item(
+            val fileName: String,
+            val pageUrl: String,
+            val marked: Pair<Int, Int>?,
+        )
 
         val items = mutableListOf<Item>()
         for (candidate in ranked) {
             val pageUrl = "${candidate.url.trimEnd('/')}/arabic"
+            val seasonHint = subf2mSeason(candidate.text, candidate.url)
             val body = runCatching {
                 app.get(
                     pageUrl,
@@ -332,11 +338,17 @@ object ArabicSubtitles {
                 val itemUrl = absoluteUrl(pageUrl, href)
                 if (itemUrl.isBlank()) continue
                 if (items.none { it.pageUrl == itemUrl }) {
-                    items.add(Item(fileName, itemUrl, parseSeasonEpisode(fileName)))
+                    items.add(
+                        Item(
+                            fileName = fileName,
+                            pageUrl = itemUrl,
+                            marked = subf2mItemMarker(fileName, seasonHint),
+                        )
+                    )
                 }
-                if (items.size >= 12) break
+                if (items.size >= MAX_ITEMS) break
             }
-            if (items.size >= 12) break
+            if (items.size >= MAX_ITEMS) break
         }
         if (items.isEmpty()) return emptyList()
 
@@ -351,8 +363,8 @@ object ArabicSubtitles {
             val cumulativeTarget = offset + episode
             val targets = setOf(episode, cumulativeTarget)
 
-            items.mapNotNull { item ->
-                val marked = item.marked ?: return@mapNotNull item to null
+            val matched = items.mapNotNull { item ->
+                val marked = item.marked ?: return@mapNotNull null
                 if (marked.first != season) return@mapNotNull null
                 if (marked.second !in targets) return@mapNotNull null
                 // Prefer the cumulative marker: it matches the file that
@@ -360,6 +372,8 @@ object ArabicSubtitles {
                 val target = if (marked.second == cumulativeTarget) cumulativeTarget else episode
                 item to target
             }
+            // Untagged files are only used when nothing tagged matched.
+            matched.ifEmpty { items.filter { it.marked == null }.map { it to null } }
         } else {
             items.map { it to null }
         }
@@ -406,6 +420,20 @@ object ArabicSubtitles {
         return result
     }
 
+    /**
+     * Finds the season/episode marker for one SubF2M file. Turkish releases are
+     * often named `Kurulus.Osman.164.Bolum...` without an `SxxExx` prefix, so
+     * the bare episode number is used with the season of the listing page.
+     */
+    private fun subf2mItemMarker(fileName: String, seasonHint: Int?): Pair<Int, Int>? {
+        parseSeasonEpisode(fileName)?.let { return it }
+        val bare = Regex(
+            """(?i)\b(\d{1,4})[.\s_-]*(?:b(?:ö|o)l(?:ü|u)m|episode|ep)\b""",
+        ).find(fileName)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: return null
+        val season = seasonHint ?: return null
+        return season to bare
+    }
+
     /** Reads the season number from a SubF2M search result title or slug. */
     private fun subf2mSeason(text: String, href: String): Int? {
         Regex("""(?i)\bseason\s*(\d{1,2})\b""").find(text)
@@ -415,8 +443,9 @@ object ArabicSubtitles {
 
         val ordinals = mapOf(
             "first" to 1, "second" to 2, "third" to 3, "fourth" to 4,
-            "fifth" to 5, "sixth" to 6, "seventh" to 7, "eighth" to 8,
-            "ninth" to 9, "tenth" to 10, "eleventh" to 11, "twelfth" to 12,
+            "firth" to 4, "fifth" to 5, "sixth" to 6, "seventh" to 7,
+            "eighth" to 8, "ninth" to 9, "tenth" to 10, "eleventh" to 11,
+            "twelfth" to 12,
         )
         val lowerText = text.lowercase(Locale.US)
         val lowerHref = href.lowercase(Locale.US)
