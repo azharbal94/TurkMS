@@ -17,14 +17,21 @@ import com.turkms.TmdbClient
 import com.turkms.TurkMSSettings
 import com.turkms.buildSiteEpisodeData
 import com.turkms.parseSiteEpisodeData
+import com.turkms.sources.AtvSource
 import com.turkms.sources.CanliDizi14Source
 import com.turkms.sources.DdiziSource
 import com.turkms.sources.DiziabiSource
 import com.turkms.sources.DiziIzleNowSource
 import com.turkms.sources.DiziboxSource
 import com.turkms.sources.DizimolySource
+import com.turkms.sources.Izle7Source
 import com.turkms.sources.JetFilmizleSource
+import com.turkms.sources.KanalDSource
+import com.turkms.sources.NowTvSource
+import com.turkms.sources.ShowTvSource
+import com.turkms.sources.StartvSource
 import com.turkms.sources.TrDiziIzleSource
+import com.turkms.sources.Trt1Source
 import com.turkms.sources.TvDizilerSource
 import com.turkms.sources.YabancidiziSource
 import com.turkms.sortForPreferredQuality
@@ -161,3 +168,10 @@ class TvDizilerProvider : BaseSiteProvider(TvDizilerSource())
 class DiziboxProvider : BaseSiteProvider(DiziboxSource())
 class YabancidiziProvider : BaseSiteProvider(YabancidiziSource())
 class JetFilmizleProvider : BaseSiteProvider(JetFilmizleSource())
+class NowTvProvider : BaseSiteProvider(NowTvSource())
+class KanalDProvider : BaseSiteProvider(KanalDSource())
+class AtvProvider : BaseSiteProvider(AtvSource())
+class ShowTvProvider : BaseSiteProvider(ShowTvSource())
+class Trt1Provider : BaseSiteProvider(Trt1Source())
+class StartvProvider : BaseSiteProvider(StartvSource())
+class Izle7Provider : BaseSiteProvider(Izle7Source())

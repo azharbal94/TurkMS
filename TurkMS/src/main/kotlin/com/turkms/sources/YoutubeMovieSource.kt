@@ -28,6 +28,7 @@ class YoutubeMovieSource : SiteSource() {
     override val name = "YouTube"
     override val mainUrl = "https://www.youtube.com"
     override val supportsMovies = true
+    override val supportsSeries = false
 
     override suspend fun search(query: String): List<SiteResult> {
         if (query.isBlank()) return emptyList()

@@ -19,10 +19,12 @@ import java.util.Locale
  * Providers, in order of appearance in the player menu:
  *
  * 1. SubtitleCat - keyless, direct UTF-8 .srt links, title based.
- * 2. Wyzie Subs - free API key, `source=all`, plain SRT/VTT links.
- * 3. OpenSubtitles v3 Stremio addon - keyless fallback.
- * 4. SubDL - free API key, ZIP downloads (resolved by SubtitleResolver).
- * 5. SubSource - free API key, ZIP downloads (resolved by SubtitleResolver).
+ * 2. SubF2M - keyless, Arabic-only listings and ZIP downloads (resolved by
+ *    SubtitleResolver). This is the main source for Turkish series.
+ * 3. Wyzie Subs - free API key, `source=all`, plain SRT/VTT links.
+ * 4. OpenSubtitles v3 Stremio addon - keyless fallback.
+ * 5. SubDL - free API key, ZIP downloads (resolved by SubtitleResolver).
+ * 6. SubSource - free API key, ZIP downloads (resolved by SubtitleResolver).
  *
  * All providers are queried in parallel and every result is matched to the
  * requested movie or exact season/episode before it is shown.
@@ -31,6 +33,7 @@ object ArabicSubtitles {
     private const val STREMIO_BASE = "https://opensubtitles-v3.strem.io/subtitles"
     private const val WYZIE_BASE = "https://sub.wyzie.io"
     private const val SUBTITLECAT_BASE = "https://www.subtitlecat.com"
+    private const val SUBF2M_BASE = "https://subf2m.co"
     private const val SUBDL_API = "https://api.subdl.com/api/v1/subtitles"
     private const val SUBSOURCE_API = "https://api.subsource.net/api/v1"
 
@@ -65,6 +68,9 @@ object ArabicSubtitles {
         val calls = mutableListOf<suspend () -> List<SubtitleFile>>()
         calls += {
             findSubtitleCat(title, originalTitle, year, isTv, season, episode)
+        }
+        calls += {
+            findSubf2m(title, originalTitle, year, isTv, season, episode)
         }
         if (id != null) {
             calls += { findWyzie(id, isTv, season, episode) }
@@ -220,6 +226,206 @@ object ArabicSubtitles {
         }
         if (result.isNotEmpty()) TurkMSCache.put(cacheKey, result)
         return result
+    }
+
+    /**
+     * SubF2M is a keyless subtitle archive with a dedicated Arabic listing for
+     * each title/season. Its search endpoint resolves titles (not episodes), so
+     * a series is matched to its season page first and the item list is then
+     * filtered by the SxxExx marker in the release filename.
+     *
+     * Turkish series are often numbered continuously on SubF2M (for example
+     * `S05.EP164` for the first episode of season 5), while TMDB uses
+     * season-relative numbers. Both variants are accepted, and the ZIP is
+     * resolved with the marker that matches the chosen file.
+     */
+    private suspend fun findSubf2m(
+        title: String?,
+        originalTitle: String?,
+        year: Int?,
+        isTv: Boolean,
+        season: Int?,
+        episode: Int?,
+    ): List<SubtitleFile> {
+        val names = listOfNotNull(title, originalTitle)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+        if (names.isEmpty()) return emptyList()
+
+        val cacheKey = "subf2m:${normalizeTitle(names.first())}:" +
+            "${year ?: 0}:${season ?: 0}:${episode ?: 0}"
+        TurkMSCache.get<List<SubtitleFile>>(cacheKey)?.let { return it }
+
+        data class Candidate(val url: String, val text: String, val score: Int)
+
+        val candidates = mutableListOf<Candidate>()
+        for (name in names.take(2)) {
+            val body = runCatching {
+                app.get(
+                    "$SUBF2M_BASE/subtitles/searchbytitle",
+                    params = mapOf("query" to name),
+                    headers = TURKMS_HEADERS + mapOf(
+                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    ),
+                    timeout = TurkMSSettings.requestTimeout,
+                ).text
+            }.getOrNull() ?: continue
+
+            val document = runCatching { Jsoup.parse(body) }.getOrNull() ?: continue
+            for (item in document.select("li")) {
+                val anchor = item.selectFirst("div.title a[href]") ?: continue
+                val href = anchor.attr("href").trim()
+                if (!href.startsWith("/subtitles/")) continue
+                val text = item.selectFirst("div.title")?.text()?.trim().orEmpty()
+                if (text.isBlank()) continue
+
+                if (isTv) {
+                    if (subf2mSeason(text, href) != season) continue
+                } else if (year != null) {
+                    val candidateYear = parseYear(text)
+                    if (candidateYear != null && candidateYear != year) continue
+                }
+
+                val score = maxOf(
+                    titleScore(text, title ?: ""),
+                    originalTitle?.let { titleScore(text, it) } ?: 0,
+                )
+                if (score < 40) continue
+                candidates.add(
+                    Candidate(absoluteUrl("$SUBF2M_BASE/", href), text, score)
+                )
+            }
+        }
+
+        val ranked = candidates
+            .distinctBy { it.url }
+            .sortedByDescending { it.score }
+            .take(3)
+        if (ranked.isEmpty()) return emptyList()
+
+        data class Item(val fileName: String, val pageUrl: String, val marked: Pair<Int, Int>?)
+
+        val items = mutableListOf<Item>()
+        for (candidate in ranked) {
+            val pageUrl = "${candidate.url.trimEnd('/')}/arabic"
+            val body = runCatching {
+                app.get(
+                    pageUrl,
+                    headers = TURKMS_HEADERS + mapOf(
+                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    ),
+                    timeout = TurkMSSettings.requestTimeout,
+                ).text
+            }.getOrNull() ?: continue
+
+            val document = runCatching { Jsoup.parse(body) }.getOrNull() ?: continue
+            for (row in document.select("li.item")) {
+                val language = row.selectFirst("span.language")?.text()?.trim()
+                if (!isArabic(language)) continue
+                val download = row.selectFirst("a.download[href]") ?: continue
+                val href = download.attr("href").trim()
+                if (href.isBlank()) continue
+                val fileName = row.select("ul.scrolllist li")
+                    .joinToString(" ") { it.text().trim() }
+                    .ifBlank { row.text().replace(Regex("\\s+"), " ").trim() }
+                val itemUrl = absoluteUrl(pageUrl, href)
+                if (itemUrl.isBlank()) continue
+                if (items.none { it.pageUrl == itemUrl }) {
+                    items.add(Item(fileName, itemUrl, parseSeasonEpisode(fileName)))
+                }
+                if (items.size >= 12) break
+            }
+            if (items.size >= 12) break
+        }
+        if (items.isEmpty()) return emptyList()
+
+        val selected: List<Pair<Item, Int?>> = if (isTv && season != null && episode != null) {
+            // SubF2M may number a series continuously. The lowest episode
+            // marker on the season page reveals the offset (0 when the site
+            // already uses season-relative numbers).
+            val seasonEpisodes = items.mapNotNull { it.marked }
+                .filter { it.first == season }
+                .map { it.second }
+            val offset = ((seasonEpisodes.minOrNull() ?: 1) - 1).coerceAtLeast(0)
+            val cumulativeTarget = offset + episode
+            val targets = setOf(episode, cumulativeTarget)
+
+            items.mapNotNull { item ->
+                val marked = item.marked ?: return@mapNotNull item to null
+                if (marked.first != season) return@mapNotNull null
+                if (marked.second !in targets) return@mapNotNull null
+                // Prefer the cumulative marker: it matches the file that
+                // SubtitleResolver will pick out of a season pack.
+                val target = if (marked.second == cumulativeTarget) cumulativeTarget else episode
+                item to target
+            }
+        } else {
+            items.map { it to null }
+        }
+
+        val result = mutableListOf<SubtitleFile>()
+        val seen = mutableSetOf<String>()
+        for ((item, target) in selected) {
+            if (result.size >= MAX_PER_SOURCE) break
+            val downloadUrl = if (item.pageUrl.endsWith("/download")) {
+                item.pageUrl
+            } else {
+                "${item.pageUrl.trimEnd('/')}/download"
+            }
+            if (!seen.add(downloadUrl)) continue
+
+            val downloadHeaders = mapOf(
+                "Referer" to item.pageUrl,
+                "User-Agent" to TURKMS_UA,
+            )
+            val resolved = runCatching {
+                withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
+                    SubtitleResolver.resolve(
+                        downloadUrl,
+                        headers = downloadHeaders,
+                        season = if (isTv && target != null) season else null,
+                        episode = if (isTv) target else null,
+                    )
+                }
+            }.getOrNull()
+                ?: runCatching {
+                    withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
+                        SubtitleResolver.resolve(downloadUrl, headers = downloadHeaders)
+                    }
+                }.getOrNull()
+                ?: continue
+
+            result.add(
+                newSubtitleFile(lang = "Arabic", url = resolved.url) {
+                    headers = resolved.headers
+                }
+            )
+        }
+        if (result.isNotEmpty()) TurkMSCache.put(cacheKey, result)
+        return result
+    }
+
+    /** Reads the season number from a SubF2M search result title or slug. */
+    private fun subf2mSeason(text: String, href: String): Int? {
+        Regex("""(?i)\bseason\s*(\d{1,2})\b""").find(text)
+            ?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { return it }
+        Regex("""(?i)season[-_](\d{1,2})(?:[-_]|$)""").find(href)
+            ?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { return it }
+
+        val ordinals = mapOf(
+            "first" to 1, "second" to 2, "third" to 3, "fourth" to 4,
+            "fifth" to 5, "sixth" to 6, "seventh" to 7, "eighth" to 8,
+            "ninth" to 9, "tenth" to 10, "eleventh" to 11, "twelfth" to 12,
+        )
+        val lowerText = text.lowercase(Locale.US)
+        val lowerHref = href.lowercase(Locale.US)
+        for ((word, number) in ordinals) {
+            if (lowerText.contains("$word season") || lowerHref.contains("-$word-season")) {
+                return number
+            }
+        }
+        return null
     }
 
     private suspend fun findWyzie(

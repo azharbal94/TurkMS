@@ -21,6 +21,13 @@ object TurkMSSettings {
     private const val KEY_DIZIBOX = "source_dizibox"
     private const val KEY_YABANCIDIZI = "source_yabancidizi"
     private const val KEY_JETFILMIZLE = "source_jetfilmizle"
+    private const val KEY_NOWTV = "source_nowtv"
+    private const val KEY_KANALD = "source_kanald"
+    private const val KEY_ATV = "source_atv"
+    private const val KEY_SHOWTV = "source_showtv"
+    private const val KEY_TRT1 = "source_trt1"
+    private const val KEY_STARTV = "source_startv"
+    private const val KEY_IZLE7 = "source_izle7"
     private const val KEY_DAILYMOTION = "source_dailymotion"
     private const val KEY_QUALITY = "preferred_quality"
     private const val KEY_TIMEOUT = "request_timeout"
@@ -46,6 +53,13 @@ object TurkMSSettings {
     var sourceDizibox: Boolean = true
     var sourceYabancidizi: Boolean = true
     var sourceJetFilmizle: Boolean = true
+    var sourceNowTv: Boolean = true
+    var sourceKanalD: Boolean = true
+    var sourceAtv: Boolean = true
+    var sourceShowTv: Boolean = true
+    var sourceTrt1: Boolean = true
+    var sourceStartv: Boolean = true
+    var sourceIzle7: Boolean = true
     var sourceDailymotion: Boolean = true
     var preferredQuality: Int = 1080
     var requestTimeout: Long = 20L
@@ -74,6 +88,13 @@ object TurkMSSettings {
         sourceDizibox = p.getBoolean(KEY_DIZIBOX, true)
         sourceYabancidizi = p.getBoolean(KEY_YABANCIDIZI, true)
         sourceJetFilmizle = p.getBoolean(KEY_JETFILMIZLE, true)
+        sourceNowTv = p.getBoolean(KEY_NOWTV, true)
+        sourceKanalD = p.getBoolean(KEY_KANALD, true)
+        sourceAtv = p.getBoolean(KEY_ATV, true)
+        sourceShowTv = p.getBoolean(KEY_SHOWTV, true)
+        sourceTrt1 = p.getBoolean(KEY_TRT1, true)
+        sourceStartv = p.getBoolean(KEY_STARTV, true)
+        sourceIzle7 = p.getBoolean(KEY_IZLE7, true)
         sourceDailymotion = p.getBoolean(KEY_DAILYMOTION, true)
         preferredQuality = p.getInt(KEY_QUALITY, 1080)
         requestTimeout = p.getLong(KEY_TIMEOUT, 20L)
@@ -99,6 +120,13 @@ object TurkMSSettings {
         dizibox: Boolean = true,
         yabancidizi: Boolean = true,
         jetfilmizle: Boolean = true,
+        nowtv: Boolean = true,
+        kanald: Boolean = true,
+        atv: Boolean = true,
+        showtv: Boolean = true,
+        trt1: Boolean = true,
+        startv: Boolean = true,
+        izle7: Boolean = true,
         dailymotion: Boolean = true,
         quality: Int,
         timeout: Long,
@@ -123,6 +151,13 @@ object TurkMSSettings {
             .putBoolean(KEY_DIZIBOX, dizibox)
             .putBoolean(KEY_YABANCIDIZI, yabancidizi)
             .putBoolean(KEY_JETFILMIZLE, jetfilmizle)
+            .putBoolean(KEY_NOWTV, nowtv)
+            .putBoolean(KEY_KANALD, kanald)
+            .putBoolean(KEY_ATV, atv)
+            .putBoolean(KEY_SHOWTV, showtv)
+            .putBoolean(KEY_TRT1, trt1)
+            .putBoolean(KEY_STARTV, startv)
+            .putBoolean(KEY_IZLE7, izle7)
             .putBoolean(KEY_DAILYMOTION, dailymotion)
             .putInt(KEY_QUALITY, quality)
             .putLong(KEY_TIMEOUT, timeout)
@@ -146,6 +181,13 @@ object TurkMSSettings {
         sourceDizibox = dizibox
         sourceYabancidizi = yabancidizi
         sourceJetFilmizle = jetfilmizle
+        sourceNowTv = nowtv
+        sourceKanalD = kanald
+        sourceAtv = atv
+        sourceShowTv = showtv
+        sourceTrt1 = trt1
+        sourceStartv = startv
+        sourceIzle7 = izle7
         sourceDailymotion = dailymotion
         preferredQuality = quality
         requestTimeout = timeout

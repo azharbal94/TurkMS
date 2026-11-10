@@ -36,6 +36,7 @@ import com.turkms.parseSiteEpisodeData
 import com.turkms.parseSiteUrl
 import com.turkms.parseYear
 import com.turkms.sortForPreferredQuality
+import com.turkms.sources.AtvSource
 import com.turkms.sources.CanliDizi14Source
 import com.turkms.sources.DailymotionSource
 import com.turkms.sources.DdiziSource
@@ -43,8 +44,14 @@ import com.turkms.sources.DiziabiSource
 import com.turkms.sources.DiziIzleNowSource
 import com.turkms.sources.DiziboxSource
 import com.turkms.sources.DizimolySource
+import com.turkms.sources.Izle7Source
 import com.turkms.sources.JetFilmizleSource
+import com.turkms.sources.KanalDSource
+import com.turkms.sources.NowTvSource
+import com.turkms.sources.ShowTvSource
+import com.turkms.sources.StartvSource
 import com.turkms.sources.TrDiziIzleSource
+import com.turkms.sources.Trt1Source
 import com.turkms.sources.TvDizilerSource
 import com.turkms.sources.YabancidiziSource
 import com.turkms.sources.YoutubeMovieSource
@@ -147,6 +154,13 @@ class TurkMSProvider : MainAPI() {
         DiziboxSource(),
         YabancidiziSource(),
         JetFilmizleSource(),
+        NowTvSource(),
+        KanalDSource(),
+        AtvSource(),
+        ShowTvSource(),
+        Trt1Source(),
+        StartvSource(),
+        Izle7Source(),
         DailymotionSource(),
         YoutubeMovieSource(),
     )
@@ -163,6 +177,13 @@ class TurkMSProvider : MainAPI() {
             "dizibox" -> TurkMSSettings.sourceDizibox
             "yabancidizi" -> TurkMSSettings.sourceYabancidizi
             "jetfilmizle" -> TurkMSSettings.sourceJetFilmizle
+            "nowtv" -> TurkMSSettings.sourceNowTv
+            "kanald" -> TurkMSSettings.sourceKanalD
+            "atv" -> TurkMSSettings.sourceAtv
+            "showtv" -> TurkMSSettings.sourceShowTv
+            "trt1" -> TurkMSSettings.sourceTrt1
+            "startv" -> TurkMSSettings.sourceStartv
+            "izle7" -> TurkMSSettings.sourceIzle7
             "dailymotion" -> TurkMSSettings.sourceDailymotion
             "youtube" -> TurkMSSettings.sourceYoutube
             else -> false
@@ -629,11 +650,11 @@ class TurkMSProvider : MainAPI() {
     }
 
     private suspend fun collectFromSource(source: SiteSource, request: AggRequest): List<ExtractorLink> {
-        // YouTube and Dailymotion only carry films we care about; keep them out
-        // of episode lookups.
-        if (request.season != null && (source.key == "youtube" || source.key == "dailymotion")) {
-            return emptyList()
-        }
+        // Skip sources that cannot serve the requested content type. Movies are
+        // requested with a null season; episodes always carry one.
+        val wantsSeries = request.season != null
+        if (wantsSeries && !source.supportsSeries) return emptyList()
+        if (!wantsSeries && !source.supportsMovies) return emptyList()
 
         val queries = listOfNotNull(request.title, request.originalTitle)
             .map { it.trim() }

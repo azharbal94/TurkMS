@@ -90,6 +90,34 @@ fun showSettingsDialog(context: Context) {
         text = "JetFilmizle (jetfilmizle.app, movies)"
         isChecked = TurkMSSettings.sourceJetFilmizle
     }
+    val nowtv = CheckBox(context).apply {
+        text = "NOW TV (nowtv.com.tr, series)"
+        isChecked = TurkMSSettings.sourceNowTv
+    }
+    val kanald = CheckBox(context).apply {
+        text = "Kanal D (kanald.com.tr, series)"
+        isChecked = TurkMSSettings.sourceKanalD
+    }
+    val atv = CheckBox(context).apply {
+        text = "atv (atv.com.tr, series)"
+        isChecked = TurkMSSettings.sourceAtv
+    }
+    val showtv = CheckBox(context).apply {
+        text = "Show TV (showtv.com.tr, series)"
+        isChecked = TurkMSSettings.sourceShowTv
+    }
+    val trt1 = CheckBox(context).apply {
+        text = "TRT 1 (trt1.com.tr, series)"
+        isChecked = TurkMSSettings.sourceTrt1
+    }
+    val startv = CheckBox(context).apply {
+        text = "Star TV (startv.com.tr, series)"
+        isChecked = TurkMSSettings.sourceStartv
+    }
+    val izle7 = CheckBox(context).apply {
+        text = "izle7 (izle7.com, series)"
+        isChecked = TurkMSSettings.sourceIzle7
+    }
     val dailymotion = CheckBox(context).apply {
         text = "Dailymotion (movie search)"
         isChecked = TurkMSSettings.sourceDailymotion
@@ -105,6 +133,13 @@ fun showSettingsDialog(context: Context) {
     layout.addView(dizibox)
     layout.addView(yabancidizi)
     layout.addView(jetfilmizle)
+    layout.addView(nowtv)
+    layout.addView(kanald)
+    layout.addView(atv)
+    layout.addView(showtv)
+    layout.addView(trt1)
+    layout.addView(startv)
+    layout.addView(izle7)
     layout.addView(dailymotion)
 
     val subtitles = CheckBox(context).apply {
@@ -123,8 +158,8 @@ fun showSettingsDialog(context: Context) {
 
     val wyzieHint = TextView(context).apply {
         text = "A free Wyzie Subs key (store.wyzie.io/redeem) queries all of its " +
-            "Arabic sources. SubtitleCat works without a key; SubDL and SubSource " +
-            "need the free keys below. Keys are stored only on this device."
+            "Arabic sources. SubtitleCat and SubF2M work without a key; SubDL and " +
+            "SubSource need the free keys below. Keys are stored only on this device."
         textSize = 11f
         setTextColor(Color.GRAY)
         setPadding(0, 0, 0, context.dp(8))
@@ -259,6 +294,13 @@ fun showSettingsDialog(context: Context) {
                 dizibox = dizibox.isChecked,
                 yabancidizi = yabancidizi.isChecked,
                 jetfilmizle = jetfilmizle.isChecked,
+                nowtv = nowtv.isChecked,
+                kanald = kanald.isChecked,
+                atv = atv.isChecked,
+                showtv = showtv.isChecked,
+                trt1 = trt1.isChecked,
+                startv = startv.isChecked,
+                izle7 = izle7.isChecked,
                 dailymotion = dailymotion.isChecked,
                 quality = quality,
                 timeout = TurkMSSettings.requestTimeout,
