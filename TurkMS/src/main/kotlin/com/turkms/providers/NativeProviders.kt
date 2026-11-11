@@ -34,9 +34,10 @@ import com.turkms.sources.TrDiziIzleSource
 import com.turkms.sources.Trt1Source
 import com.turkms.sources.TvDizilerSource
 import com.turkms.sources.YabancidiziSource
-import com.turkms.sortForPreferredQuality
 import com.turkms.toLoadResponse
 import com.turkms.toSearchResponse
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 
 abstract class BaseSiteProvider(private val site: SiteSource) : MainAPI() {
@@ -94,14 +95,28 @@ abstract class BaseSiteProvider(private val site: SiteSource) : MainAPI() {
         val meta = parseSiteEpisodeData(data)
         val target = meta?.url ?: data
         val links = mutableListOf<ExtractorLink>()
-        site.loadLinks(target) { links.add(it) }
-        for (link in links.sortForPreferredQuality()) callback(link)
-        if (meta != null) {
-            addArabicSubtitles(meta, subtitleCallback)
-        } else {
-            addArabicSubtitles(target, subtitleCallback)
+        val seen = mutableSetOf<String>()
+        return coroutineScope {
+            // Subtitles are resolved while the streams are extracted, so a slow
+            // subtitle provider cannot delay the playable links.
+            val subtitles = async {
+                if (meta != null) {
+                    addArabicSubtitles(meta, subtitleCallback)
+                } else {
+                    addArabicSubtitles(target, subtitleCallback)
+                }
+            }
+            site.loadLinks(target) { link ->
+                // Emit immediately; the player can start on the first stream
+                // instead of waiting for every mirror to be extracted.
+                if (seen.add(link.url)) {
+                    links.add(link)
+                    callback(link)
+                }
+            }
+            subtitles.await()
+            links.isNotEmpty()
         }
-        return links.isNotEmpty()
     }
 
     private suspend fun addArabicSubtitles(

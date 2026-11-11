@@ -118,6 +118,7 @@ class DailymotionSource : SiteSource() {
         val qualities = meta.optJSONObject("qualities") ?: return false
 
         val links = mutableListOf<ExtractorLink>()
+        val seen = mutableSetOf<String>()
         val keys = qualities.keys()
         while (keys.hasNext()) {
             val key = keys.next()
@@ -125,7 +126,7 @@ class DailymotionSource : SiteSource() {
             for (i in 0 until entries.length()) {
                 val entry = entries.optJSONObject(i) ?: continue
                 val stream = entry.optString("url").trim()
-                if (stream.isBlank()) continue
+                if (stream.isBlank() || !seen.add(stream)) continue
                 val mime = entry.optString("type").lowercase()
                 val isHls = mime.contains("mpegurl") || stream.contains(".m3u8")
                 val label = when {
@@ -139,14 +140,15 @@ class DailymotionSource : SiteSource() {
                     url = stream,
                     type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
                     referer = "$mainUrl/",
-                    callback = { links.add(it) },
+                    callback = { link ->
+                        links.add(link)
+                        callback(link)
+                    },
                 )
             }
         }
 
-        val unique = links.distinctBy { it.url }
-        for (link in unique) callback(link)
-        return unique.isNotEmpty()
+        return links.isNotEmpty()
     }
 
     private suspend fun fetchMetadata(id: String): JSONObject? {

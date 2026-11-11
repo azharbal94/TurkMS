@@ -35,7 +35,6 @@ import com.turkms.parseAggData
 import com.turkms.parseSiteEpisodeData
 import com.turkms.parseSiteUrl
 import com.turkms.parseYear
-import com.turkms.sortForPreferredQuality
 import com.turkms.sources.AtvSource
 import com.turkms.sources.CanliDizi14Source
 import com.turkms.sources.DailymotionSource
@@ -62,6 +61,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.util.Collections
@@ -580,49 +581,78 @@ class TurkMSProvider : MainAPI() {
         }
 
         val request = parseAggData(data) ?: return false
-        val links = collectLinks(request)
-        for (link in links) callback(link)
-
-        if (TurkMSSettings.arabicSubtitles) {
-            val imdb = request.imdbId ?: runCatching {
-                withTimeoutOrNull(10_000) {
-                    TmdbClient.resolveImdb(
+        return coroutineScope {
+            // Subtitle lookups run in parallel with stream extraction: a slow
+            // subtitle provider must not delay the first playable link.
+            val subtitles = async {
+                if (!TurkMSSettings.arabicSubtitles) return@async
+                runCatching {
+                    val imdb = request.imdbId ?: runCatching {
+                        withTimeoutOrNull(10_000) {
+                            TmdbClient.resolveImdb(
+                                title = request.title,
+                                originalTitle = request.originalTitle,
+                                year = request.year,
+                                isTv = request.season != null,
+                            )
+                        }
+                    }.getOrNull()
+                    ArabicSubtitles.find(
+                        imdbId = imdb,
                         title = request.title,
                         originalTitle = request.originalTitle,
                         year = request.year,
                         isTv = request.season != null,
-                    )
+                        season = request.season,
+                        episode = request.episode,
+                    ).forEach { subtitleCallback(it) }
                 }
-            }.getOrNull()
-            ArabicSubtitles.find(
-                imdbId = imdb,
-                title = request.title,
-                originalTitle = request.originalTitle,
-                year = request.year,
-                isTv = request.season != null,
-                season = request.season,
-                episode = request.episode,
-            ).forEach { subtitleCallback(it) }
+            }
+
+            val found = collectLinks(request) { callback(it) }
+            subtitles.await()
+            found
         }
-        return links.isNotEmpty()
     }
 
-    private suspend fun collectLinks(request: AggRequest): List<ExtractorLink> {
-        val sources = enabledSources()
-        if (sources.isEmpty()) return emptyList()
+    /**
+     * Runs every enabled source concurrently and hands each link to [onLink] the
+     * moment that source finds it. The player can start on the first good link
+     * instead of waiting for the slowest mirror chain.
+     */
+    private suspend fun collectLinks(
+        request: AggRequest,
+        onLink: suspend (ExtractorLink) -> Unit,
+    ): Boolean {
+        val sources = linkSources(request)
+        if (sources.isEmpty()) return false
 
-        val results = Collections.synchronizedList(mutableListOf<ExtractorLink>())
+        val emitted = Collections.synchronizedSet(mutableSetOf<String>())
+        val emitLock = Mutex()
+        val found = java.util.concurrent.atomic.AtomicBoolean(false)
+
         coroutineScope {
             val jobs = sources.map { source ->
                 launch {
-                    val found = try {
-                        withTimeoutOrNull(SOURCE_TIMEOUT_MS) { collectFromSource(source, request) }
+                    try {
+                        withTimeoutOrNull(SOURCE_TIMEOUT_MS) {
+                            collectFromSource(source, request) { link ->
+                                if (link.url.isNotBlank()) {
+                                    val isNew = synchronized(emitted) { emitted.add(link.url) }
+                                    if (isNew) {
+                                        found.set(true)
+                                        // Serialize UI callbacks even though the
+                                        // sources themselves run in parallel.
+                                        emitLock.withLock { onLink(link) }
+                                    }
+                                }
+                            }
+                        }
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
                     } catch (_: Throwable) {
-                        null
+                        // A dead source must not affect the others.
                     }
-                    if (!found.isNullOrEmpty()) results.addAll(found)
                 }
             }
 
@@ -632,7 +662,7 @@ class TurkMSProvider : MainAPI() {
                 val now = System.currentTimeMillis()
                 // Every source finished (or was cancelled) - nothing left to wait for.
                 if (jobs.none { it.isActive }) break
-                if (results.isNotEmpty()) {
+                if (emitted.isNotEmpty()) {
                     if (firstResultAt == 0L) firstResultAt = now
                     if (now - firstResultAt >= MIRROR_GRACE_MS) break
                 }
@@ -642,14 +672,50 @@ class TurkMSProvider : MainAPI() {
             jobs.forEach { it.cancel() }
         }
 
-        val snapshot = synchronized(results) { results.toList() }
-        val seen = mutableSetOf<String>()
-        return snapshot
-            .filter { it.url.isNotBlank() && seen.add(it.url) }
-            .sortForPreferredQuality()
+        return found.get()
     }
 
-    private suspend fun collectFromSource(source: SiteSource, request: AggRequest): List<ExtractorLink> {
+    /**
+     * Playback order: official broadcaster CDNs first (direct 1080p MP4/HLS),
+     * then the catch-all scrapers, then the slowest extractor chains. Sources
+     * still run concurrently; this only decides whose link reaches the player
+     * first.
+     */
+    private fun linkSources(request: AggRequest): List<SiteSource> {
+        val sources = enabledSources()
+        if (request.season == null) {
+            return sources.sortedBy { source ->
+                when (source.key) {
+                    "ddizi", "dizimoly", "diziabi", "tvdiziler", "jetfilmizle",
+                    "canlidizi14" -> 10
+                    "dailymotion" -> 70
+                    "youtube" -> 80
+                    else -> 40
+                }
+            }
+        }
+        return sources.sortedBy { source ->
+            when (source.key) {
+                "showtv" -> 5
+                "atv" -> 6
+                "nowtv" -> 7
+                "kanald" -> 8
+                "startv" -> 9
+                "trt1" -> 10
+                "izle7" -> 11
+                "dizibox", "yabancidizi" -> 20
+                "diziizlenow", "ddizi", "trdiziizle", "dizimoly", "diziabi",
+                "tvdiziler", "canlidizi14" -> 40
+                else -> 60
+            }
+        }
+    }
+
+    private suspend fun collectFromSource(
+        source: SiteSource,
+        request: AggRequest,
+        onLink: suspend (ExtractorLink) -> Unit,
+    ): List<ExtractorLink> {
         // Skip sources that cannot serve the requested content type. Movies are
         // requested with a null season; episodes always carry one.
         val wantsSeries = request.season != null
@@ -729,14 +795,20 @@ class TurkMSProvider : MainAPI() {
 
                 runCatching {
                     withTimeoutOrNull(15_000) {
-                        source.loadLinks(episode.url) { links.add(it) }
+                        source.loadLinks(episode.url) { link ->
+                            links.add(link)
+                            onLink(link)
+                        }
                     } ?: false
                 }
             } else {
                 if (details != null && details.episodes.isNotEmpty()) continue
                 runCatching {
                     withTimeoutOrNull(15_000) {
-                        source.loadLinks(result.url) { links.add(it) }
+                        source.loadLinks(result.url) { link ->
+                            links.add(link)
+                            onLink(link)
+                        }
                     } ?: false
                 }
             }

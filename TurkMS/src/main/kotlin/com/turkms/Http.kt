@@ -215,6 +215,23 @@ fun titleScore(a: String, b: String): Int {
     return common * 20
 }
 
+/**
+ * True when a media URL answers with a playable 200/206 response. A tiny range
+ * request keeps the check cheap; it is used to offer optional lower-bitrate
+ * renditions without ever handing the player a dead URL.
+ */
+suspend fun mediaPlayable(url: String, referer: String? = null): Boolean = runCatching {
+    app.get(
+        url,
+        headers = TURKMS_HEADERS + mapOf(
+            "Range" to "bytes=0-0",
+            "Accept" to "*/*",
+        ),
+        referer = referer,
+        timeout = 8_000,
+    ).code in 200..206
+}.getOrDefault(false)
+
 fun parseYear(text: String?): Int? {
     if (text.isNullOrBlank()) return null
     return Regex("(19|20)\\d{2}").find(text)?.value?.toIntOrNull()

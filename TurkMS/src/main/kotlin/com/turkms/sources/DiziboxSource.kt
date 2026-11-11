@@ -285,7 +285,13 @@ class DiziboxSource : SiteSource() {
         callback: suspend (ExtractorLink) -> Unit,
     ): Boolean {
         val links = mutableListOf<ExtractorLink>()
-        val collector: suspend (ExtractorLink) -> Unit = { links.add(it) }
+        val seen = mutableSetOf<String>()
+        val collector: suspend (ExtractorLink) -> Unit = { link ->
+            if (seen.add(link.url)) {
+                links.add(link)
+                callback(link)
+            }
+        }
 
         val firstPage = fetchDocument(url)
         if (firstPage != null) handlePage(url, firstPage, collector)
@@ -302,9 +308,7 @@ class DiziboxSource : SiteSource() {
             }
         }
 
-        val unique = links.distinctBy { it.url }
-        for (link in unique) callback(link)
-        return unique.isNotEmpty()
+        return links.isNotEmpty()
     }
 
     private suspend fun handlePage(

@@ -229,7 +229,13 @@ class TvDizilerSource : SiteSource() {
     ): Boolean {
         val document = fetchDocument(url) ?: return false
         val links = mutableListOf<ExtractorLink>()
-        val collector: suspend (ExtractorLink) -> Unit = { links.add(it) }
+        val seen = mutableSetOf<String>()
+        val collector: suspend (ExtractorLink) -> Unit = { link ->
+            if (seen.add(link.url)) {
+                links.add(link)
+                callback(link)
+            }
+        }
 
         // "Tek Part" button: /vid/ply/<id> renders a JW player with a signed
         // Yandex Disk MP4.
@@ -244,13 +250,17 @@ class TvDizilerSource : SiteSource() {
             val playerUrl = absoluteUrl(mainUrl, path)
             val html = fetchText(playerUrl, referer = url) ?: continue
             emitJwSources(html, playerUrl, url, collector)
+            if (links.size >= 3) break
         }
 
         // Secondary player: encrypted spoox2 token resolved through an AJAX call.
-        for (item in document.select("[data-spoox2]")) {
-            val value = item.attr("data-spoox2").trim()
-            if (value.isBlank()) continue
-            loadSpoox(value, url, collector)
+        if (links.size < 3) {
+            for (item in document.select("[data-spoox2]")) {
+                val value = item.attr("data-spoox2").trim()
+                if (value.isBlank()) continue
+                loadSpoox(value, url, collector)
+                if (links.size >= 3) break
+            }
         }
 
         if (links.isEmpty()) {
@@ -260,9 +270,7 @@ class TvDizilerSource : SiteSource() {
             }
         }
 
-        val unique = links.distinctBy { it.url }
-        for (link in unique) callback(link)
-        return unique.isNotEmpty()
+        return links.isNotEmpty()
     }
 
     private suspend fun loadSpoox(

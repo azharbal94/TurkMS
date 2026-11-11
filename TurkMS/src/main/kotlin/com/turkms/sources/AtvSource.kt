@@ -13,6 +13,7 @@ import com.turkms.emitLink
 import com.turkms.fetchDocument
 import com.turkms.fetchText
 import com.turkms.firstImage
+import com.turkms.mediaPlayable
 import com.turkms.parseEpisodeNumber
 import com.turkms.titleScore
 import kotlinx.coroutines.async
@@ -240,6 +241,23 @@ class AtvSource : SiteSource() {
             referer = url,
             callback = callback,
         )
+
+        // The CDN also publishes a 720p rendition next to the 1080p JSON-LD
+        // file. Verify it first (one tiny range request) and then offer it as a
+        // lighter option for slow connections.
+        if (!isHls && stream.contains("_1080p_3000k.mp4")) {
+            val fallback = stream.replace("_1080p_3000k.mp4", "_720p_2000k.mp4")
+            if (fallback != stream && mediaPlayable(fallback, url)) {
+                emitLink(
+                    source = name,
+                    label = "720p",
+                    url = fallback,
+                    type = ExtractorLinkType.VIDEO,
+                    referer = url,
+                    callback = callback,
+                )
+            }
+        }
         return true
     }
 

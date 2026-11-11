@@ -31,7 +31,41 @@ suspend fun extractFirePlayer(
     val api = playerUrl.substringBefore('?').trimEnd('/') + "?do=getVideo"
 
     val main = fetchFireSources(api, hash, referer, null) ?: return false
-    val all = parseFireSources(main).toMutableList()
+    val seen = mutableSetOf<String>()
+    var emitted = false
+
+    suspend fun emitSources(sources: List<FireSource>) {
+        for (source in sources) {
+            if (source.url.isBlank() || !seen.add(source.url)) continue
+
+            // Some servers expose a YouTube mirror instead of a direct stream.
+            val ytId = youtubeId(source.url)
+            if (ytId != null) {
+                val ok = extractWithBuiltins(
+                    "https://www.youtube.com/watch?v=$ytId",
+                    referer,
+                    callback,
+                )
+                if (ok) emitted = true
+                continue
+            }
+
+            emitLink(
+                source = sourceName,
+                label = source.label,
+                url = source.url,
+                type = source.type,
+                referer = playerUrl,
+                callback = callback,
+                headers = mapOf("Referer" to playerUrl),
+            )
+            emitted = true
+        }
+    }
+
+    // The primary server is enough to start playback; emit it before spending
+    // time on the alternative servers.
+    emitSources(parseFireSources(main))
 
     // Alternative servers listed by the player. Fetching two of them keeps the
     // extra choice without turning a single episode into a long request chain.
@@ -52,38 +86,10 @@ suspend fun extractFirePlayer(
             }.awaitAll()
         }
         for (json in alternates) {
-            if (json != null) all += parseFireSources(json)
+            if (json != null) emitSources(parseFireSources(json))
         }
     }
 
-    val seen = mutableSetOf<String>()
-    var emitted = false
-    for (source in all) {
-        if (source.url.isBlank() || !seen.add(source.url)) continue
-
-        // Some servers expose a YouTube mirror instead of a direct stream.
-        val ytId = youtubeId(source.url)
-        if (ytId != null) {
-            val ok = extractWithBuiltins(
-                "https://www.youtube.com/watch?v=$ytId",
-                referer,
-                callback,
-            )
-            if (ok) emitted = true
-            continue
-        }
-
-        emitLink(
-            source = sourceName,
-            label = source.label,
-            url = source.url,
-            type = source.type,
-            referer = playerUrl,
-            callback = callback,
-            headers = mapOf("Referer" to playerUrl),
-        )
-        emitted = true
-    }
     return emitted
 }
 

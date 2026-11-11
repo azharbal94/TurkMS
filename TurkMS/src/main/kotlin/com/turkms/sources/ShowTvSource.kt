@@ -9,10 +9,12 @@ import com.turkms.SiteResult
 import com.turkms.SiteSource
 import com.turkms.TurkMSCache
 import com.turkms.absoluteUrl
+import com.turkms.cleanPlayerUrl
 import com.turkms.emitLink
 import com.turkms.fetchDocument
 import com.turkms.fetchText
 import com.turkms.firstImage
+import com.turkms.qualityFromLabel
 import com.turkms.titleScore
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -212,36 +214,55 @@ class ShowTvSource : SiteSource() {
         callback: suspend (ExtractorLink) -> Unit,
     ): Boolean {
         val document = fetchDocument(url) ?: return false
-        val html = document.html()
-        val links = mutableListOf<Pair<String, Boolean>>()
 
-        for (stream in jsonLdContentUrls(document)) {
-            if (stream.contains(".mp4") || stream.contains(".m3u8")) {
-                links.add(stream to stream.contains(".m3u8"))
-            }
-        }
-
-        // The player config is HTML-escaped inside a data attribute. Unescaping
-        // exposes the adaptive manifest (`media.m3u8[0].src`).
-        val unescaped = html
+        // The player config is HTML-escaped inside a data attribute. It lists
+        // the adaptive master playlist plus every fixed MP4 rendition, so the
+        // full quality ladder is available instead of just the 1080p JSON-LD
+        // file. The adaptive stream goes first: the player can then drop quality
+        // instead of buffering on a fixed 1080p download.
+        val unescaped = document.html()
             .replace("&quot;", "\"")
             .replace("&#34;", "\"")
             .replace("&amp;", "&")
-        Regex("""https?://[^"'\s]+\.m3u8[^"'\s]*""").find(unescaped)?.value
-            ?.let { links.add(it to true) }
-        Regex("""https?://[^"'\s]+\.mp4[^"'\s]*""").find(unescaped)?.value
-            ?.let { links.add(it to false) }
+            .replace("\\/", "/")
 
-        val unique = links
-            .filter { it.first.isNotBlank() }
-            .distinctBy { it.first }
-        if (unique.isEmpty()) return false
+        data class Stream(val url: String, val label: String)
 
-        for ((stream, isHls) in unique) {
+        val parsed = Regex(
+            """"label"\s*:\s*"([^"]*)"\s*,\s*"src"\s*:\s*"(https?://[^"]+\.(?:m3u8|mp4)[^"]*)"""",
+        ).findAll(unescaped).mapNotNull { match ->
+            val stream = cleanPlayerUrl(match.groupValues[2]).trim()
+            if (stream.isBlank()) null else Stream(stream, match.groupValues[1].trim())
+        }.toList()
+
+        val streams = buildList {
+            parsed.filter { it.url.contains(".m3u8") }
+                .sortedBy { if (it.label.equals("Auto", true)) 0 else 1 }
+                .forEach { add(it) }
+            parsed.filterNot { it.url.contains(".m3u8") }
+                .sortedByDescending { qualityFromLabel(it.label) }
+                .forEach { add(it) }
+
+            if (isEmpty()) {
+                for (stream in jsonLdContentUrls(document)) {
+                    if (stream.contains(".mp4") || stream.contains(".m3u8")) {
+                        val isHls = stream.contains(".m3u8")
+                        add(Stream(stream, if (isHls) "Auto" else qualityLabel(stream)))
+                    }
+                }
+            }
+        }.filter { it.url.isNotBlank() }.distinctBy { it.url }
+
+        if (streams.isEmpty()) return false
+
+        for (stream in streams) {
+            val isHls = stream.url.contains(".m3u8")
             emitLink(
                 source = name,
-                label = if (isHls) "HLS" else qualityLabel(stream),
-                url = stream,
+                label = stream.label.ifBlank {
+                    if (isHls) "Auto" else qualityLabel(stream.url)
+                },
+                url = stream.url,
                 type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
                 referer = url,
                 callback = callback,

@@ -247,7 +247,15 @@ class YabancidiziSource : SiteSource() {
     ): Boolean {
         val document = fetchDocument(url) ?: return false
         val links = mutableListOf<ExtractorLink>()
-        val collector: suspend (ExtractorLink) -> Unit = { links.add(it) }
+        val seen = mutableSetOf<String>()
+        val collector: suspend (ExtractorLink) -> Unit = { link ->
+            // Emit as soon as an embed resolves; waiting for every VidMoly
+            // mirror is what made episode start-up feel slow.
+            if (seen.add(link.url)) {
+                links.add(link)
+                callback(link)
+            }
+        }
 
         // Every episode page lists its VidMoly uploads as download links. The
         // id in `/dl/<id>` is the same id used by the embed player.
@@ -258,9 +266,12 @@ class YabancidiziSource : SiteSource() {
             .distinct()
             .take(6)
             .toList()
+        var resolved = 0
         for (id in ids) {
             val embed = "https://vidmoly.biz/embed-$id.html"
-            extractWithBuiltins(embed, url, collector)
+            if (extractWithBuiltins(embed, url, collector)) resolved++
+            // Two working mirrors are enough; the rest only adds latency.
+            if (resolved >= 2) break
         }
 
         // The native player endpoint is currently down (HTTP 520), but if it
@@ -269,9 +280,7 @@ class YabancidiziSource : SiteSource() {
             loadFromAjax(document, url, collector)
         }
 
-        val unique = links.distinctBy { it.url }
-        for (link in unique) callback(link)
-        return unique.isNotEmpty()
+        return links.isNotEmpty()
     }
 
     private suspend fun loadFromAjax(

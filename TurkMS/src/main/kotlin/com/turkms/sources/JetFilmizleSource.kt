@@ -157,7 +157,13 @@ class JetFilmizleSource : SiteSource() {
         if (filmId.isBlank()) return false
 
         val links = mutableListOf<ExtractorLink>()
-        val collector: suspend (ExtractorLink) -> Unit = { links.add(it) }
+        val emittedUrls = mutableSetOf<String>()
+        val collector: suspend (ExtractorLink) -> Unit = { link ->
+            if (emittedUrls.add(link.url)) {
+                links.add(link)
+                callback(link)
+            }
+        }
         val seen = mutableSetOf<String>()
 
         // The source buttons are duplicated for the dublaj and altyazili tabs;
@@ -186,11 +192,12 @@ class JetFilmizleSource : SiteSource() {
                 ?: continue
 
             resolvePlayer(absoluteUrl(mainUrl, src.trim()), url, collector)
+            // Two or three mirrors are plenty; scanning every duplicate button
+            // only delays the link list.
+            if (links.size >= 3) break
         }
 
-        val unique = links.distinctBy { it.url }
-        for (link in unique) callback(link)
-        return unique.isNotEmpty()
+        return links.isNotEmpty()
     }
 
     private suspend fun resolvePlayer(
